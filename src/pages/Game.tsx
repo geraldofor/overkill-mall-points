@@ -9,19 +9,37 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   Heart,
   Crosshair,
-  MapPin,
   Clock,
   Users,
   Swords,
   Trophy,
   Shield,
-  Zap,
   Snowflake,
+  RotateCcw,
+  ShieldPlus,
+  Flame,
+  Zap,
 } from "lucide-react";
 
+// ──────────────────────────────────────────────────────────────
+// Helper: detect mobile
+// ──────────────────────────────────────────────────────────────
+function isMobileDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    "ontouchstart" in window ||
+    navigator.maxTouchPoints > 0 ||
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Main Game Component
+// ──────────────────────────────────────────────────────────────
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -33,19 +51,64 @@ export default function Game() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 600 });
+  const [isMobile] = useState(isMobileDevice);
+  const [isPortrait, setIsPortrait] = useState(
+    () => typeof window !== "undefined" && window.innerHeight > window.innerWidth
+  );
 
   const map: GameMap | undefined = ALL_MAPS.find((m) => m.id === mapId);
 
+  // ── Resize + orientation detection ──
   const resizeCanvas = useCallback(() => {
-    setCanvasSize({ w: window.innerWidth, h: window.innerHeight });
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    setCanvasSize({ w, h });
+    setIsPortrait(h > w);
   }, []);
 
   useEffect(() => {
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
-    return () => window.removeEventListener("resize", resizeCanvas);
+    window.addEventListener("orientationchange", resizeCanvas);
+    return () => {
+      window.removeEventListener("resize", resizeCanvas);
+      window.removeEventListener("orientationchange", resizeCanvas);
+    };
   }, [resizeCanvas]);
 
+  // ── Try to lock landscape ──
+  useEffect(() => {
+    if (!isMobile) return;
+    const lock = async () => {
+      try {
+        const screen = window.screen as Screen & { orientation?: { lock?: (o: string) => Promise<void> } };
+        if (screen.orientation?.lock) {
+          await screen.orientation.lock("landscape");
+        }
+      } catch {
+        // Orientation lock not supported — fallback to prompt overlay
+      }
+    };
+    lock();
+  }, [isMobile]);
+
+  // ── Try fullscreen ──
+  useEffect(() => {
+    if (!isMobile || !containerRef.current) return;
+    const goFullscreen = async () => {
+      try {
+        const el = containerRef.current;
+        if (el && !document.fullscreenElement) {
+          await el.requestFullscreen?.();
+        }
+      } catch {
+        // Fullscreen not supported
+      }
+    };
+    goFullscreen();
+  }, [isMobile]);
+
+  // ── Start engine ──
   useEffect(() => {
     if (!canvasRef.current || !map) return;
     const engine = new GameEngine(canvasRef.current);
@@ -74,16 +137,21 @@ export default function Game() {
     return () => engine.stop();
   }, [map, botCount, playerName]);
 
+  // ── Mobile action handlers ──
+  const pressAction = useCallback((key: string) => {
+    engineRef.current?.pressAction(key);
+  }, []);
+
   if (!map) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0b0b0d] text-[#f4f2ee]">
         <div className="text-center">
-          <p className="font-oswald text-lg">Mapa não encontrado</p>
+          <p className="font-oswald text-lg">Mapa nao encontrado</p>
           <button
             onClick={() => navigate("/")}
             className="mt-4 font-oswald text-sm text-[#ff2b3d] uppercase cursor-pointer"
           >
-            ← Voltar
+            Voltar
           </button>
         </div>
       </div>
@@ -103,7 +171,33 @@ export default function Game() {
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#0a0a0c] select-none">
+    <div
+      ref={containerRef}
+      className="relative w-screen h-screen overflow-hidden bg-[#0a0a0c] select-none"
+    >
+      {/* ── Orientation lock prompt for mobile portrait ── */}
+      {isMobile && isPortrait && !showResults && (
+        <div className="absolute inset-0 z-[100] bg-[#0b0b0d] flex flex-col items-center justify-center gap-6 p-8">
+          <RotateCcw className="size-16 text-[#ffcc00] animate-spin" style={{ animationDuration: "3s" }} />
+          <h2 className="font-anton text-3xl text-[#f4f2ee] text-center">
+            Vire o celular
+          </h2>
+          <p className="font-oswald text-sm text-[#7c7c82] text-center max-w-[280px]">
+            O jogo funciona melhor em modo paisagem. Gire seu dispositivo para jogar.
+          </p>
+          <div className="flex items-center gap-2 text-[#52525a]">
+            <svg width="40" height="28" viewBox="0 0 40 28" fill="none" className="opacity-50">
+              <rect x="1" y="1" width="38" height="26" rx="3" stroke="currentColor" strokeWidth="2"/>
+              <rect x="4" y="4" width="14" height="20" rx="1" fill="currentColor" opacity="0.3"/>
+            </svg>
+            <svg width="28" height="40" viewBox="0 0 28 40" fill="none" className="text-[#ffcc00] opacity-70">
+              <rect x="1" y="1" width="26" height="38" rx="3" stroke="currentColor" strokeWidth="2"/>
+              <rect x="4" y="4" width="20" height="14" rx="1" fill="currentColor" opacity="0.3"/>
+            </svg>
+          </div>
+        </div>
+      )}
+
       <canvas
         ref={canvasRef}
         width={canvasSize.w}
@@ -112,28 +206,28 @@ export default function Game() {
         style={{ touchAction: "none" }}
       />
 
-      {/* HUD Overlay */}
+      {/* ── HUD Overlay ── */}
       {human && !showResults && (
         <>
-          {/* Top bar — alive count, kills, timer, placement */}
-          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/80 to-transparent pointer-events-none z-10">
-            <div className="flex items-center gap-5">
+          {/* Top bar */}
+          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-b from-black/80 to-transparent pointer-events-none z-10">
+            <div className="flex items-center gap-3 sm:gap-5">
               <div className="flex items-center gap-1.5">
-                <Users className="size-4 text-[#7c7c82]" />
-                <span className="font-anton text-base text-[#f4f2ee]">
+                <Users className="size-3.5 sm:size-4 text-[#7c7c82]" />
+                <span className="font-anton text-sm sm:text-base text-[#f4f2ee]">
                   {gameState?.aliveCount || 0}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Swords className="size-4 text-[#ff2b3d]" />
-                <span className="font-anton text-base text-[#f4f2ee]">
+                <Swords className="size-3.5 sm:size-4 text-[#ff2b3d]" />
+                <span className="font-anton text-sm sm:text-base text-[#f4f2ee]">
                   {human.kills}
                 </span>
               </div>
               {human.headshots > 0 && (
                 <div className="flex items-center gap-1">
-                  <span className="text-xs">🎯</span>
-                  <span className="font-oswald text-xs text-[#ffcc00]">
+                  <span className="text-[10px] sm:text-xs">🎯</span>
+                  <span className="font-oswald text-[10px] sm:text-xs text-[#ffcc00]">
                     {human.headshots}
                   </span>
                 </div>
@@ -141,35 +235,34 @@ export default function Game() {
             </div>
 
             <div className="flex items-center gap-1.5">
-              <Clock className="size-4 text-[#7c7c82]" />
-              <span className="font-anton text-base text-[#f4f2ee]">
+              <Clock className="size-3.5 sm:size-4 text-[#7c7c82]" />
+              <span className="font-anton text-sm sm:text-base text-[#f4f2ee]">
                 {formatTime(gameState?.matchTime || 0)}
               </span>
             </div>
 
             <div className="flex items-center gap-1.5">
-              <Trophy className="size-4 text-[#ffcc00]" />
-              <span className="font-anton text-base text-[#ffcc00]">
+              <Trophy className="size-3.5 sm:size-4 text-[#ffcc00]" />
+              <span className="font-anton text-sm sm:text-base text-[#ffcc00]">
                 #{placement}
               </span>
             </div>
           </div>
 
-          {/* Left panel — Health, EP, Armor, Weapon */}
-          <div className="absolute bottom-4 left-4 pointer-events-none z-10 max-w-[200px]">
-            {/* Health */}
-            <div className="flex items-center gap-2 mb-1">
-              <Heart className="size-4 text-[#ff2b3d]" />
-              <span className="font-anton text-lg text-[#f4f2ee]">
+          {/* Left panel — HP, EP, Armor, Weapon — hidden on small mobile */}
+          <div className="absolute bottom-4 left-3 sm:left-4 pointer-events-none z-10 max-w-[180px] sm:max-w-[200px]">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
+              <Heart className="size-3.5 sm:size-4 text-[#ff2b3d]" />
+              <span className="font-anton text-base sm:text-lg text-[#f4f2ee]">
                 {Math.ceil(human.health)}
               </span>
               {human.ep > 0 && (
-                <span className="font-oswald text-xs text-[#a855f7] ml-1">
+                <span className="font-oswald text-[10px] sm:text-xs text-[#a855f7] ml-1">
                   EP:{Math.floor(human.ep)}
                 </span>
               )}
             </div>
-            <div className="w-44 h-3 bg-[#1a1a1c] rounded-sm overflow-hidden border border-[#26262a]">
+            <div className="w-36 sm:w-44 h-2.5 sm:h-3 bg-[#1a1a1c] rounded-sm overflow-hidden border border-[#26262a]">
               <div
                 className="h-full transition-all duration-100"
                 style={{
@@ -179,68 +272,35 @@ export default function Game() {
                 }}
               />
             </div>
-
-            {/* EP bar */}
             {human.ep > 0 && (
-              <div className="w-44 h-1.5 bg-[#1a1a1c] rounded-sm overflow-hidden border border-[#26262a] mt-0.5">
+              <div className="w-36 sm:w-44 h-1.5 bg-[#1a1a1c] rounded-sm overflow-hidden border border-[#26262a] mt-0.5">
                 <div
                   className="h-full transition-all duration-100"
-                  style={{
-                    width: `${(human.ep / human.maxEp) * 100}%`,
-                    backgroundColor: "#a855f7",
-                  }}
+                  style={{ width: `${(human.ep / human.maxEp) * 100}%`, backgroundColor: "#a855f7" }}
                 />
               </div>
             )}
-
-            {/* Armor bar */}
             {human.armor.level > 0 && (
-              <div className="flex items-center gap-1.5 mt-1.5">
+              <div className="flex items-center gap-1.5 mt-1">
                 <Shield className="size-3 text-[#94a3b8]" />
-                <div className="w-32 h-2 bg-[#1a1a1c] rounded-sm overflow-hidden border border-[#26262a]">
+                <div className="w-28 sm:w-32 h-2 bg-[#1a1a1c] rounded-sm overflow-hidden border border-[#26262a]">
                   <div
                     className="h-full transition-all duration-100"
-                    style={{
-                      width: `${(human.armor.durability / human.armor.maxDurability) * 100}%`,
-                      backgroundColor: "#94a3b8",
-                    }}
+                    style={{ width: `${(human.armor.durability / human.armor.maxDurability) * 100}%`, backgroundColor: "#94a3b8" }}
                   />
                 </div>
-                <span className="font-oswald text-[10px] text-[#64748b]">
-                  Lv{human.armor.level}
-                </span>
+                <span className="font-oswald text-[9px] sm:text-[10px] text-[#64748b]">Lv{human.armor.level}</span>
               </div>
             )}
-
-            {/* Helmet indicator */}
-            {human.helmet.level > 0 && (
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className="text-[10px]">🪖</span>
-                <span className="font-oswald text-[10px] text-[#64748b]">
-                  Capacete Lv{human.helmet.level}
-                </span>
-                <div className="w-16 h-1 bg-[#1a1a1c] rounded-sm overflow-hidden">
-                  <div
-                    className="h-full"
-                    style={{
-                      width: `${(human.helmet.durability / human.helmet.maxDurability) * 100}%`,
-                      backgroundColor: "#94a3b8",
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Weapon & Ammo */}
-            <div className="flex items-center gap-2 mt-2">
-              <Crosshair className="size-3 text-[#7c7c82]" />
-              <span className="font-oswald text-xs text-[#7c7c82] uppercase">
+            <div className="flex items-center gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
+              <Crosshair className="size-2.5 sm:size-3 text-[#7c7c82]" />
+              <span className="font-oswald text-[10px] sm:text-xs text-[#7c7c82] uppercase">
                 {WEAPONS[human.weapon].name}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5">
               <span
-                className={`font-anton text-base ${
+                className={`font-anton text-sm sm:text-base ${
                   human.ammo <= 5
                     ? "text-[#ff2b3d] animate-pulse"
                     : human.ammo <= 15
@@ -250,87 +310,61 @@ export default function Game() {
               >
                 {human.ammo}
               </span>
-              <span className="font-oswald text-xs text-[#52525a]">
+              <span className="font-oswald text-[10px] sm:text-xs text-[#52525a]">
                 / {human.maxAmmo}
               </span>
-              <span className="font-oswald text-[10px] text-[#52525a] ml-1">
-                Reserva: {human.reserveAmmo}
+              <span className="font-oswald text-[9px] sm:text-[10px] text-[#52525a] ml-1">
+                R:{human.reserveAmmo}
               </span>
             </div>
-
-            {/* Gloo walls */}
             {human.glooWalls > 0 && (
-              <div className="flex items-center gap-1.5 mt-1.5">
+              <div className="flex items-center gap-1 sm:gap-1.5 mt-1">
                 <Snowflake className="size-3 text-[#00e5ff]" />
-                <span className="font-oswald text-xs text-[#00e5ff]">
-                  {human.glooWalls} / {human.maxGlooWalls}
-                </span>
-                <span className="font-oswald text-[10px] text-[#52525a]">
-                  [G] Parede
+                <span className="font-oswald text-[10px] sm:text-xs text-[#00e5ff]">
+                  {human.glooWalls}/{human.maxGlooWalls}
                 </span>
               </div>
             )}
-
-            {/* Movement state */}
-            <div className="flex items-center gap-2 mt-1.5">
-              {human.isCrouching && (
-                <span className="font-oswald text-[10px] text-[#f59e0b] bg-[#f59e0b]/10 px-1.5 py-0.5 rounded">
-                  AGACHADO
-                </span>
-              )}
-              {human.isSprinting && (
-                <span className="font-oswald text-[10px] text-[#3b82f6] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded">
-                  CORRENDO
-                </span>
-              )}
-            </div>
           </div>
 
           {/* Score — bottom center */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none z-10">
-            <div className="bg-[#141416]/80 border border-[#26262a] rounded px-4 py-2 text-center">
-              <span className="font-oswald text-[10px] tracking-[0.14em] text-[#7c7c82] uppercase block">
+          <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 pointer-events-none z-10">
+            <div className="bg-[#141416]/80 border border-[#26262a] rounded px-3 py-1.5 sm:px-4 sm:py-2 text-center">
+              <span className="font-oswald text-[8px] sm:text-[10px] tracking-[0.14em] text-[#7c7c82] uppercase block">
                 Score
               </span>
-              <span className="font-anton text-xl text-[#ffcc00]">
+              <span className="font-anton text-lg sm:text-xl text-[#ffcc00]">
                 {human.score.toLocaleString()}
               </span>
             </div>
           </div>
 
           {/* Kill feed — top right */}
-          <div className="absolute top-10 right-4 pointer-events-none z-10">
-            {gameState?.killFeed.slice(0, 5).map((entry, i) => (
+          <div className="absolute top-10 right-2 sm:right-4 pointer-events-none z-10">
+            {gameState?.killFeed.slice(0, isMobile ? 3 : 5).map((entry, i) => (
               <div
                 key={i}
-                className="bg-[#141416]/80 border border-[#26262a] rounded px-3 py-1 mb-1 text-right"
+                className="bg-[#141416]/80 border border-[#26262a] rounded px-2 py-0.5 sm:px-3 sm:py-1 mb-0.5 sm:mb-1 text-right"
                 style={{ opacity: 1 - i * 0.15 }}
               >
-                <span className="font-oswald text-xs text-[#f4f2ee]">
+                <span className="font-oswald text-[10px] sm:text-xs text-[#f4f2ee]">
                   {entry.killerName}
                 </span>
-                <span className="font-oswald text-xs text-[#7c7c82] mx-1">
+                <span className="font-oswald text-[10px] sm:text-xs text-[#7c7c82] mx-0.5 sm:mx-1">
                   {entry.isHeadshot ? "🎯" : getWeaponIcon(entry.weaponType)}
                 </span>
-                <span className="font-oswald text-xs text-[#ff2b3d]">
+                <span className="font-oswald text-[10px] sm:text-xs text-[#ff2b3d]">
                   {entry.victimName}
                 </span>
               </div>
             ))}
           </div>
 
-          {/* Minimap — bottom right */}
-          <div className="absolute bottom-4 right-4 pointer-events-none z-10">
-            <div className="w-36 h-36 bg-[#0b0b0d]/90 border border-[#26262a] rounded overflow-hidden relative">
-              <Minimap gameState={gameState} humanId={human.id} />
+          {/* Minimap — bottom right (smaller on mobile) */}
+          <div className={`absolute bottom-3 sm:bottom-4 right-2 sm:right-4 pointer-events-none z-10 ${isMobile ? "w-24 h-24" : "w-36 h-36"}`}>
+            <div className="w-full h-full bg-[#0b0b0d]/90 border border-[#26262a] rounded overflow-hidden relative">
+              <Minimap gameState={gameState} humanId={human.id} size={isMobile ? 96 : 144} />
             </div>
-          </div>
-
-          {/* Quick items bar — above minimap */}
-          <div className="absolute bottom-[170px] right-4 pointer-events-none z-10 flex gap-1">
-            <QuickItem slot="4" label="Bandagem" count={-1} active={false} />
-            <QuickItem slot="5" label="Kit Médico" count={-1} active={false} />
-            <QuickItem slot="G" label="Gloo Wall" count={human.glooWalls} active={false} />
           </div>
 
           {/* Zone warning */}
@@ -341,10 +375,10 @@ export default function Game() {
             );
             if (dist > gameState.zone.radius * 0.85) {
               return (
-                <div className="absolute top-14 left-1/2 -translate-x-1/2 pointer-events-none z-10 animate-pulse">
-                  <div className="bg-[#ff2b3d]/20 border border-[#ff2b3d]/50 rounded px-4 py-2">
-                    <span className="font-oswald text-xs text-[#ff2b3d] uppercase tracking-wider">
-                      ⚠ FORA DA ZONA SEGURA!
+                <div className="absolute top-12 sm:top-14 left-1/2 -translate-x-1/2 pointer-events-none z-10 animate-pulse">
+                  <div className="bg-[#ff2b3d]/20 border border-[#ff2b3d]/50 rounded px-3 py-1.5 sm:px-4 sm:py-2">
+                    <span className="font-oswald text-[10px] sm:text-xs text-[#ff2b3d] uppercase tracking-wider">
+                      FORA DA ZONA!
                     </span>
                   </div>
                 </div>
@@ -353,38 +387,69 @@ export default function Game() {
             return null;
           })()}
 
-          {/* Controls hint — desktop only */}
-          <div className="absolute top-14 left-4 pointer-events-none z-10 hidden sm:block">
+          {/* Desktop controls hint */}
+          <div className="absolute top-12 sm:top-14 left-3 sm:left-4 pointer-events-none z-10 hidden sm:block">
             <div className="bg-[#141416]/50 border border-[#26262a] rounded px-3 py-2 space-y-0.5">
-              <span className="font-oswald text-[10px] text-[#52525a] block">
-                WASD — Mover
-              </span>
-              <span className="font-oswald text-[10px] text-[#52525a] block">
-                Shift — Correr
-              </span>
-              <span className="font-oswald text-[10px] text-[#52525a] block">
-                Ctrl/C — Agachar
-              </span>
-              <span className="font-oswald text-[10px] text-[#52525a] block">
-                R — Recarregar
-              </span>
-              <span className="font-oswald text-[10px] text-[#52525a] block">
-                G/Q — Parede de Gel
-              </span>
-              <span className="font-oswald text-[10px] text-[#52525a] block">
-                4 — Bandagem | 5 — Kit Médico
-              </span>
+              <span className="font-oswald text-[10px] text-[#52525a] block">WASD — Mover</span>
+              <span className="font-oswald text-[10px] text-[#52525a] block">Shift — Correr</span>
+              <span className="font-oswald text-[10px] text-[#52525a] block">Ctrl/C — Agachar</span>
+              <span className="font-oswald text-[10px] text-[#52525a] block">R — Recarregar</span>
+              <span className="font-oswald text-[10px] text-[#52525a] block">G/Q — Parede de Gel</span>
+              <span className="font-oswald text-[10px] text-[#52525a] block">4 — Bandagem | 5 — Kit</span>
             </div>
           </div>
 
-          {/* Mobile touch hints */}
-          <div className="absolute bottom-4 left-1/2 translate-x-[calc(-50%+80px)] pointer-events-none z-10 sm:hidden">
-            <div className="bg-[#141416]/60 rounded px-3 py-1">
-              <span className="font-oswald text-[10px] text-[#52525a] uppercase">
-                Esq=mover | Dir=atirar
-              </span>
+          {/* ── MOBILE: Virtual Action Buttons ── */}
+          {isMobile && !isPortrait && (
+            <div className="absolute bottom-4 right-28 sm:right-36 z-20 flex flex-col gap-2 pointer-events-auto">
+              {/* Reload */}
+              <button
+                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("r"); }}
+                className="w-12 h-12 bg-[#ffcc00]/20 border border-[#ffcc00]/50 rounded-full flex items-center justify-center active:bg-[#ffcc00]/40 touch-none"
+              >
+                <RotateCcw className="size-5 text-[#ffcc00]" />
+              </button>
+              {/* Gloo Wall */}
+              <button
+                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("g"); }}
+                className="w-12 h-12 bg-[#00e5ff]/20 border border-[#00e5ff]/50 rounded-full flex items-center justify-center active:bg-[#00e5ff]/40 touch-none"
+              >
+                <Snowflake className="size-5 text-[#00e5ff]" />
+              </button>
+              {/* Bandage */}
+              <button
+                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("4"); }}
+                className="w-10 h-10 bg-[#4ade80]/20 border border-[#4ade80]/50 rounded-full flex items-center justify-center active:bg-[#4ade80]/40 touch-none"
+              >
+                <span className="font-oswald text-[10px] text-[#4ade80]">B</span>
+              </button>
+              {/* Medkit */}
+              <button
+                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("5"); }}
+                className="w-10 h-10 bg-[#16a34a]/20 border border-[#16a34a]/50 rounded-full flex items-center justify-center active:bg-[#16a34a]/40 touch-none"
+              >
+                <span className="font-oswald text-[10px] text-[#16a34a]">M</span>
+              </button>
+              {/* Crouch */}
+              <button
+                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("c"); }}
+                className="w-10 h-10 bg-[#f59e0b]/20 border border-[#f59e0b]/50 rounded-full flex items-center justify-center active:bg-[#f59e0b]/40 touch-none"
+              >
+                <ShieldPlus className="size-4 text-[#f59e0b]" />
+              </button>
             </div>
-          </div>
+          )}
+
+          {/* Mobile joystick hint */}
+          {isMobile && (
+            <div className="absolute bottom-4 left-4 pointer-events-none z-10">
+              <div className="bg-[#141416]/60 rounded px-2 py-1">
+                <span className="font-oswald text-[9px] text-[#52525a] uppercase">
+                  Esq=mover | Dir=atirar
+                </span>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -394,6 +459,7 @@ export default function Game() {
           gameState={gameState}
           humanId={human.id}
           onExit={() => navigate("/")}
+          isMobile={isMobile}
         />
       )}
     </div>
@@ -432,9 +498,11 @@ function QuickItem({
 function Minimap({
   gameState,
   humanId,
+  size = 144,
 }: {
   gameState: GameState | null;
   humanId: string;
+  size?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -448,7 +516,6 @@ function Minimap({
     const scale = c.width / map.width;
 
     ctx.clearRect(0, 0, c.width, c.height);
-
     ctx.fillStyle = map.color;
     ctx.fillRect(0, 0, c.width, c.height);
 
@@ -457,7 +524,6 @@ function Minimap({
       ctx.fillRect(room.x * scale, room.y * scale, room.w * scale, room.h * scale);
     }
 
-    // Zone
     ctx.strokeStyle = "#ff2b3d";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -470,7 +536,6 @@ function Minimap({
     );
     ctx.stroke();
 
-    // Gloo walls on minimap
     for (const gw of gameState.glooWalls) {
       ctx.fillStyle = "rgba(0,229,255,0.6)";
       ctx.fillRect(
@@ -481,27 +546,25 @@ function Minimap({
       );
     }
 
-    // Players
     for (const [, player] of gameState.players) {
       if (!player.alive) continue;
       ctx.fillStyle = player.id === humanId ? "#ffcc00" : player.color;
       ctx.beginPath();
-      ctx.arc(player.pos.x * scale, player.pos.y * scale, 2.5, 0, Math.PI * 2);
+      ctx.arc(player.pos.x * scale, player.pos.y * scale, 2, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Human player ring
     const human = gameState.players.get(humanId);
     if (human && human.alive) {
       ctx.strokeStyle = "#ffcc00";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(human.pos.x * scale, human.pos.y * scale, 4, 0, Math.PI * 2);
+      ctx.arc(human.pos.x * scale, human.pos.y * scale, 3.5, 0, Math.PI * 2);
       ctx.stroke();
     }
   }, [gameState, humanId]);
 
-  return <canvas ref={canvasRef} width={144} height={144} className="block" />;
+  return <canvas ref={canvasRef} width={size} height={size} className="block" />;
 }
 
 // ============================================================================
@@ -511,10 +574,12 @@ function GameResults({
   gameState,
   humanId,
   onExit,
+  isMobile,
 }: {
   gameState: GameState;
   humanId: string;
   onExit: () => void;
+  isMobile: boolean;
 }) {
   const human = gameState.players.get(humanId);
   if (!human) return null;
@@ -557,80 +622,66 @@ function GameResults({
       : 0;
 
   const objectiveScore = human.itemsCollected * SCORE.ITEM_COLLECT;
-
-  const totalScore =
-    combatScore + survivalScore + placementScore + streakBonus + objectiveScore;
+  const totalScore = combatScore + survivalScore + placementScore + streakBonus + objectiveScore;
 
   return (
     <div className="absolute inset-0 bg-[#0b0b0d]/95 flex items-center justify-center z-50 p-4">
       <div className="max-w-lg w-full">
-        <div className="text-center mb-8">
-          <div className="font-oswald text-xs tracking-[0.35em] text-[#ffcc00] uppercase mb-2">
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="font-oswald text-[10px] sm:text-xs tracking-[0.35em] text-[#ffcc00] uppercase mb-2">
             Partida encerrada
           </div>
           {placement === 1 ? (
-            <h1 className="font-anton text-6xl text-[#ffcc00] uppercase">
-              VITÓRIA!
-            </h1>
+            <h1 className="font-anton text-4xl sm:text-6xl text-[#ffcc00] uppercase">VITORIA!</h1>
           ) : (
-            <h1 className="font-anton text-5xl text-[#f4f2ee] uppercase">
-              #{placement}º Lugar
+            <h1 className="font-anton text-3xl sm:text-5xl text-[#f4f2ee] uppercase">
+              #{placement} Lugar
             </h1>
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className={`grid gap-2 sm:gap-3 mb-4 sm:mb-6 ${isMobile ? "grid-cols-3" : "grid-cols-3"}`}>
           {[
             { label: "Abates", value: human.kills, color: "#ff2b3d" },
             { label: "Headshots", value: human.headshots, color: "#ffcc00" },
             { label: "Dano", value: Math.floor(human.damageDealt), color: "#f59e0b" },
             { label: "Tempo", value: `${Math.floor(human.survivalTime)}s`, color: "#7c7c82" },
             { label: "Itens", value: human.itemsCollected, color: "#22c55e" },
-            { label: "Streak Max", value: human.killstreakMax, color: "#a855f7" },
+            { label: "Streak", value: human.killstreakMax, color: "#a855f7" },
           ].map((stat, i) => (
-            <div
-              key={i}
-              className="bg-[#141416] border border-[#26262a] rounded p-3 text-center"
-            >
-              <span className="font-oswald text-[10px] tracking-wider text-[#7c7c82] uppercase block">
+            <div key={i} className="bg-[#141416] border border-[#26262a] rounded p-2 sm:p-3 text-center">
+              <span className="font-oswald text-[8px] sm:text-[10px] tracking-wider text-[#7c7c82] uppercase block">
                 {stat.label}
               </span>
-              <span
-                className="font-anton text-xl block mt-1"
-                style={{ color: stat.color }}
-              >
+              <span className="font-anton text-base sm:text-xl block mt-0.5 sm:mt-1" style={{ color: stat.color }}>
                 {stat.value}
               </span>
             </div>
           ))}
         </div>
 
-        <div className="bg-[#141416] border border-[#26262a] rounded p-4 mb-6">
-          <h3 className="font-oswald text-xs tracking-[0.14em] text-[#7c7c82] uppercase mb-3">
-            Detalhes da pontuação
+        <div className="bg-[#141416] border border-[#26262a] rounded p-3 sm:p-4 mb-4 sm:mb-6">
+          <h3 className="font-oswald text-[10px] sm:text-xs tracking-[0.14em] text-[#7c7c82] uppercase mb-2 sm:mb-3">
+            Detalhes da pontuacao
           </h3>
-          <div className="space-y-2">
+          <div className="space-y-1.5 sm:space-y-2">
             {[
               { label: "Combate", value: combatScore },
-              { label: "Sobrevivência", value: survivalScore },
-              { label: `Posição (#${placement})`, value: placementScore },
+              { label: "Sobrevivencia", value: survivalScore },
+              { label: `Posicao (#${placement})`, value: placementScore },
               { label: "Objetivos", value: objectiveScore },
-              { label: "Bônus Streak", value: streakBonus },
+              { label: "Bonus Streak", value: streakBonus },
             ].map((item, i) => (
               <div key={i} className="flex justify-between">
-                <span className="font-oswald text-sm text-[#7c7c82]">
-                  {item.label}
-                </span>
-                <span className="font-oswald text-sm text-[#f4f2ee]">
+                <span className="font-oswald text-xs sm:text-sm text-[#7c7c82]">{item.label}</span>
+                <span className="font-oswald text-xs sm:text-sm text-[#f4f2ee]">
                   +{item.value.toLocaleString()}
                 </span>
               </div>
             ))}
             <div className="border-t border-[#26262a] pt-2 mt-2 flex justify-between">
-              <span className="font-oswald text-sm text-[#ffcc00] uppercase">
-                Total
-              </span>
-              <span className="font-anton text-lg text-[#ffcc00]">
+              <span className="font-oswald text-xs sm:text-sm text-[#ffcc00] uppercase">Total</span>
+              <span className="font-anton text-base sm:text-lg text-[#ffcc00]">
                 {totalScore.toLocaleString()}
               </span>
             </div>
@@ -640,13 +691,13 @@ function GameResults({
         <div className="flex gap-3">
           <button
             onClick={onExit}
-            className="flex-1 py-3 bg-[#1a1a1c] border border-[#26262a] rounded font-oswald text-sm tracking-wider text-[#7c7c82] hover:bg-[#26262a] hover:text-[#f4f2ee] transition-colors cursor-pointer uppercase"
+            className="flex-1 py-2.5 sm:py-3 bg-[#1a1a1c] border border-[#26262a] rounded font-oswald text-xs sm:text-sm tracking-wider text-[#7c7c82] hover:bg-[#26262a] hover:text-[#f4f2ee] transition-colors cursor-pointer uppercase"
           >
             Sair
           </button>
           <button
             onClick={() => window.location.reload()}
-            className="flex-1 py-3 bg-[#ff2b3d] rounded font-oswald text-sm tracking-wider text-white hover:bg-[#ff1526] transition-colors cursor-pointer uppercase"
+            className="flex-1 py-2.5 sm:py-3 bg-[#ff2b3d] rounded font-oswald text-xs sm:text-sm tracking-wider text-white hover:bg-[#ff1526] transition-colors cursor-pointer uppercase"
           >
             Jogar novamente
           </button>

@@ -374,8 +374,10 @@ export class GameEngine {
 
     this.canvas.addEventListener("mousemove", (e) => {
       const rect = this.canvas.getBoundingClientRect();
-      this.mouse.x = e.clientX - rect.left + this.camera.x;
-      this.mouse.y = e.clientY - rect.top + this.camera.y;
+      const scaleX = this.canvas.width / rect.width;
+      const scaleY = this.canvas.height / rect.height;
+      this.mouse.x = (e.clientX - rect.left) * scaleX + this.camera.x;
+      this.mouse.y = (e.clientY - rect.top) * scaleY + this.camera.y;
     });
 
     this.canvas.addEventListener("mousedown", (e) => {
@@ -392,14 +394,29 @@ export class GameEngine {
     this.canvas.addEventListener("touchend", (e) => this.handleTouchEnd(e), { passive: false });
   }
 
+  // Public touch action handlers (called from Game.tsx buttons)
+  public pressAction(action: string): void {
+    this.keys.add(action);
+    // Auto-remove after a frame for one-shot actions
+    setTimeout(() => this.keys.delete(action), 50);
+  }
+
+  public isMobile(): boolean {
+    return "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  }
+
   private handleTouchStart(e: TouchEvent): void {
     e.preventDefault();
     if (!this.audioInited) { audio.init(); this.audioInited = true; }
     for (const touch of Array.from(e.changedTouches)) {
       const rect = this.canvas.getBoundingClientRect();
+      const displayW = rect.width;
+      const displayH = rect.height;
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
-      if (x < this.canvas.width / 2) {
+
+      // Left half = joystick, right half = aim+shoot
+      if (x < displayW * 0.45) {
         this.touchJoystick = { active: true, startX: x, startY: y, x, y };
       } else {
         this.touchShoot = { active: true, x: touch.clientX, y: touch.clientY };
@@ -416,7 +433,7 @@ export class GameEngine {
         const dx = touch.clientX - rect.left - this.touchJoystick.startX;
         const dy = touch.clientY - rect.top - this.touchJoystick.startY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const maxDist = 45;
+        const maxDist = 55;
         if (dist > maxDist) {
           this.touchJoystick.x = this.touchJoystick.startX + (dx / dist) * maxDist;
           this.touchJoystick.y = this.touchJoystick.startY + (dy / dist) * maxDist;
@@ -436,8 +453,9 @@ export class GameEngine {
     e.preventDefault();
     for (const touch of Array.from(e.changedTouches)) {
       const rect = this.canvas.getBoundingClientRect();
+      const displayW = rect.width;
       const x = touch.clientX - rect.left;
-      if (x < this.canvas.width / 2) {
+      if (x < displayW * 0.45) {
         this.touchJoystick = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
       } else {
         this.touchShoot = { active: false, x: 0, y: 0 };
@@ -640,8 +658,10 @@ export class GameEngine {
     let targetX: number, targetY: number;
     if (this.touchShoot.active) {
       const rect = this.canvas.getBoundingClientRect();
-      targetX = this.touchShoot.x - rect.left + this.camera.x;
-      targetY = this.touchShoot.y - rect.top + this.camera.y;
+      const scaleX = this.canvas.width / rect.width;
+      const scaleY = this.canvas.height / rect.height;
+      targetX = (this.touchShoot.x - rect.left) * scaleX + this.camera.x;
+      targetY = (this.touchShoot.y - rect.top) * scaleY + this.camera.y;
     } else {
       targetX = this.mouse.x;
       targetY = this.mouse.y;
