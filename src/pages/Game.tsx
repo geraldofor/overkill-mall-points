@@ -17,8 +17,6 @@ import {
   Snowflake,
   RotateCcw,
   ShieldPlus,
-  Flame,
-  Zap,
 } from "lucide-react";
 
 // ──────────────────────────────────────────────────────────────
@@ -361,7 +359,7 @@ export default function Game() {
           </div>
 
           {/* Minimap — bottom right (smaller on mobile) */}
-          <div className={`absolute bottom-3 sm:bottom-4 right-2 sm:right-4 pointer-events-none z-10 ${isMobile ? "w-24 h-24" : "w-36 h-36"}`}>
+          <div className={`absolute bottom-16 sm:bottom-4 right-2 sm:right-4 pointer-events-none z-10 ${isMobile ? "w-24 h-24" : "w-36 h-36"}`}>
             <div className="w-full h-full bg-[#0b0b0d]/90 border border-[#26262a] rounded overflow-hidden relative">
               <Minimap gameState={gameState} humanId={human.id} size={isMobile ? 96 : 144} />
             </div>
@@ -399,48 +397,48 @@ export default function Game() {
             </div>
           </div>
 
-          {/* ── MOBILE: Virtual Action Buttons ── */}
+          {/* ── MOBILE: Action Buttons (split left/right) ── */}
           {isMobile && !isPortrait && (
-            <div className="absolute bottom-4 right-28 sm:right-36 z-20 flex flex-col gap-2 pointer-events-auto">
-              {/* Reload */}
-              <button
-                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("r"); }}
-                className="w-12 h-12 bg-[#ffcc00]/20 border border-[#ffcc00]/50 rounded-full flex items-center justify-center active:bg-[#ffcc00]/40 touch-none"
-              >
-                <RotateCcw className="size-5 text-[#ffcc00]" />
-              </button>
-              {/* Gloo Wall */}
-              <button
-                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("g"); }}
-                className="w-12 h-12 bg-[#00e5ff]/20 border border-[#00e5ff]/50 rounded-full flex items-center justify-center active:bg-[#00e5ff]/40 touch-none"
-              >
-                <Snowflake className="size-5 text-[#00e5ff]" />
-              </button>
-              {/* Bandage */}
-              <button
-                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("4"); }}
-                className="w-10 h-10 bg-[#4ade80]/20 border border-[#4ade80]/50 rounded-full flex items-center justify-center active:bg-[#4ade80]/40 touch-none"
-              >
-                <span className="font-oswald text-[10px] text-[#4ade80]">B</span>
-              </button>
-              {/* Medkit */}
-              <button
-                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("5"); }}
-                className="w-10 h-10 bg-[#16a34a]/20 border border-[#16a34a]/50 rounded-full flex items-center justify-center active:bg-[#16a34a]/40 touch-none"
-              >
-                <span className="font-oswald text-[10px] text-[#16a34a]">M</span>
-              </button>
-              {/* Crouch */}
-              <button
-                onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("c"); }}
-                className="w-10 h-10 bg-[#f59e0b]/20 border border-[#f59e0b]/50 rounded-full flex items-center justify-center active:bg-[#f59e0b]/40 touch-none"
-              >
-                <ShieldPlus className="size-4 text-[#f59e0b]" />
-              </button>
-            </div>
+            <>
+              {/* RIGHT SIDE: Reload + Gloo Wall (big, combat buttons) */}
+              <div className="absolute bottom-20 right-4 z-20 flex flex-row gap-3 pointer-events-auto">
+                {/* Reload — big yellow */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("r"); }}
+                  className="w-14 h-14 bg-[#ffcc00]/20 border-2 border-[#ffcc00]/60 rounded-full flex items-center justify-center active:bg-[#ffcc00]/50 active:scale-95 touch-none shadow-lg"
+                >
+                  <RotateCcw className="size-6 text-[#ffcc00]" />
+                </button>
+                {/* Gloo Wall — big cyan */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("g"); }}
+                  className="w-14 h-14 bg-[#00e5ff]/20 border-2 border-[#00e5ff]/60 rounded-full flex items-center justify-center active:bg-[#00e5ff]/50 active:scale-95 touch-none shadow-lg"
+                >
+                  <Snowflake className="size-6 text-[#00e5ff]" />
+                </button>
+              </div>
+
+              {/* LEFT SIDE: Bandage + Medkit (healing, above joystick) */}
+              <div className="absolute bottom-20 left-4 z-20 flex flex-row gap-2 pointer-events-auto">
+                {/* Bandage */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("4"); }}
+                  className="w-11 h-11 bg-[#4ade80]/20 border-2 border-[#4ade80]/50 rounded-full flex items-center justify-center active:bg-[#4ade80]/50 active:scale-95 touch-none"
+                >
+                  <span className="font-oswald text-xs font-bold text-[#4ade80]">B</span>
+                </button>
+                {/* Medkit */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("5"); }}
+                  className="w-11 h-11 bg-[#16a34a]/20 border-2 border-[#16a34a]/50 rounded-full flex items-center justify-center active:bg-[#16a34a]/50 active:scale-95 touch-none"
+                >
+                  <span className="font-oswald text-xs font-bold text-[#16a34a]">M</span>
+                </button>
+              </div>
+            </>
           )}
 
-          {/* Mobile joystick hint */}
+{/* Mobile joystick hint */}
           {isMobile && (
             <div className="absolute bottom-4 left-4 pointer-events-none z-10">
               <div className="bg-[#141416]/60 rounded px-2 py-1">

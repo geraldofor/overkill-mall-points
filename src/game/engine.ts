@@ -737,8 +737,8 @@ export class GameEngine {
       if (d < nearDist) { nearDist = d; nearest = p; }
     }
 
-    const aggroRange = 450;
-    const fleeRange = 90;
+    const aggroRange = 280;
+    const fleeRange = 130;
 
     // Reload if empty
     const rs = this.reloadState.get(bot.id);
@@ -759,30 +759,31 @@ export class GameEngine {
         bot.isSprinting = true;
         bot.isCrouching = false;
       } else {
-        const strafeAngle = angle + Math.sin(s.matchTime * 2.5 + bot.pos.x * 0.01) * 0.6;
-        const moveSpeed = nearDist < 200 ? 130 : 160;
+        const strafeAngle = angle + Math.sin(s.matchTime * 1.5 + bot.pos.x * 0.01) * 0.35;
+        const moveSpeed = nearDist < 200 ? 90 : 120;
         bot.vel.x = Math.cos(strafeAngle) * moveSpeed;
         bot.vel.y = Math.sin(strafeAngle) * moveSpeed;
-        bot.isSprinting = nearDist > 200;
-        bot.isCrouching = nearDist < 150 && bot.health > 50;
+        bot.isSprinting = nearDist > 250;
+        bot.isCrouching = false;
       }
 
       bot.facing = angle;
 
-      // Shoot
-      if (nearDist < aggroRange * 0.85 && bot.ammo > 0 && !rs?.reloading) {
+      // Shoot (nerfed: slower reaction, lower accuracy)
+      if (nearDist < aggroRange * 0.75 && bot.ammo > 0 && !rs?.reloading) {
         const now = performance.now();
         const weaponDef = WEAPONS[bot.weapon];
         const lastFire = this.lastFireTimes.get(bot.id) || 0;
-        const accuracy = bot.isCrouching ? 0.7 : 0.55;
-        if (now - lastFire > weaponDef.fireRate && Math.random() < accuracy) {
+        const accuracy = 0.25 + Math.random() * 0.1;
+        const fireDelay = weaponDef.fireRate * 2.2;
+        if (now - lastFire > fireDelay && Math.random() < accuracy) {
           this.fireBullet(bot);
           this.lastFireTimes.set(bot.id, now);
         }
       }
 
-      // Smart gloo wall usage
-      if (nearDist < 180 && bot.glooWalls > 0 && bot.health < 50 && Math.random() < 0.02) {
+      // Rare gloo wall usage
+      if (nearDist < 150 && bot.glooWalls > 0 && bot.health < 30 && Math.random() < 0.003) {
         this.deployGlooWall(bot);
       }
     } else {
@@ -796,10 +797,10 @@ export class GameEngine {
         bot.vel.y = (toZoneY / toZoneDist) * 110;
         bot.facing = Math.atan2(toZoneY, toZoneX);
       } else {
-        if (Math.random() < 0.015) {
+        if (Math.random() < 0.01) {
           const a = Math.random() * Math.PI * 2;
-          bot.vel.x = Math.cos(a) * 80;
-          bot.vel.y = Math.sin(a) * 80;
+          bot.vel.x = Math.cos(a) * 60;
+          bot.vel.y = Math.sin(a) * 60;
           bot.facing = a;
         }
       }
