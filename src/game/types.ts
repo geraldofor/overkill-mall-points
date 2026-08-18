@@ -172,7 +172,8 @@ export type ItemType =
   | "gloo_wall"       // +1 gloo wall charge
   | "vest_1" | "vest_2" | "vest_3" | "vest_4"     // armor pickup
   | "helmet_1" | "helmet_2" | "helmet_3" | "helmet_4" // helmet pickup
-  | "speed_boost";    // temporary 20% speed for 10s
+  | "speed_boost"     // temporary 20% speed for 10s
+  | "wpn_pistol" | "wpn_smg" | "wpn_rifle" | "wpn_shotgun" | "wpn_sniper"; // weapon pickups
 
 export interface Item {
   id: string;
@@ -285,6 +286,9 @@ export interface GameState {
 
   // Particles (visual feedback)
   particles: Particle[];
+
+  // Screen shake
+  screenShake: number; // remaining shake intensity
 }
 
 // ============================================================================

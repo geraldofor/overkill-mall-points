@@ -226,6 +226,7 @@ export class GameEngine {
       started: false,
       countdown: 3,
       particles: [],
+      screenShake: 0,
     };
   }
 
@@ -317,6 +318,22 @@ export class GameEngine {
         pos: {
           x: spawn.x + (Math.random() - 0.5) * 30,
           y: spawn.y + (Math.random() - 0.5) * 30,
+        },
+        collected: false,
+      });
+    }
+
+    // Weapon pickups — scattered in corridors and rooms
+    const weaponPickups: ItemType[] = ["wpn_smg", "wpn_smg", "wpn_shotgun", "wpn_shotgun", "wpn_pistol", "wpn_pistol", "wpn_rifle", "wpn_sniper"];
+    for (let i = 0; i < 12; i++) {
+      const type = weaponPickups[i % weaponPickups.length];
+      const room = map.rooms[Math.floor(Math.random() * map.rooms.length)];
+      items.push({
+        id: uid(),
+        type,
+        pos: {
+          x: room.x + 30 + Math.random() * (room.w - 60),
+          y: room.y + 30 + Math.random() * (room.h - 60),
         },
         collected: false,
       });
@@ -884,6 +901,19 @@ export class GameEngine {
       case "speed_boost":
         this.speedBoosts.set(player.id, performance.now() + SPEED_BOOST_DURATION * 1000);
         break;
+      case "wpn_pistol":
+      case "wpn_smg":
+      case "wpn_rifle":
+      case "wpn_shotgun":
+      case "wpn_sniper": {
+        const wpnType = item.type.replace("wpn_", "") as WeaponType;
+        player.weapon = wpnType;
+        const def = WEAPONS[wpnType];
+        player.ammo = def.magSize;
+        player.maxAmmo = def.magSize;
+        player.reserveAmmo = def.magSize * 3;
+        break;
+      }
     }
   }
 
@@ -1002,6 +1032,11 @@ export class GameEngine {
       owner.pos.y + Math.sin(owner.facing) * 18,
       "#ffaa00", 3, "muzzle",
     );
+
+    // Screen shake for human
+    if (!owner.isBot) {
+      this.state.screenShake = Math.max(this.state.screenShake, WEAPONS[owner.weapon].recoil * 4);
+    }
   }
 
   private updateBullets(dt: number): void {
@@ -1246,12 +1281,22 @@ export class GameEngine {
       this.camera.y = human.pos.y - H / 2;
     }
 
+    // Screen shake decay
+    let shakeX = 0, shakeY = 0;
+    if (s.screenShake > 0.1) {
+      shakeX = (Math.random() - 0.5) * s.screenShake * 2;
+      shakeY = (Math.random() - 0.5) * s.screenShake * 2;
+      s.screenShake *= 0.85;
+    } else {
+      s.screenShake = 0;
+    }
+
     // Clear
     c.fillStyle = "#0a0a0c";
     c.fillRect(0, 0, W, H);
 
     c.save();
-    c.translate(-this.camera.x, -this.camera.y);
+    c.translate(-this.camera.x + shakeX, -this.camera.y + shakeY);
 
     this.renderMap(c);
     this.renderZone(c);
@@ -1266,6 +1311,11 @@ export class GameEngine {
     }
 
     this.renderBullets(c);
+
+    // Crosshair / aim line for human player
+    if (human && human.alive) {
+      this.renderCrosshair(c, human);
+    }
 
     c.restore();
 
@@ -1415,44 +1465,87 @@ export class GameEngine {
 
       const color = this.getItemColor(item.type);
       const icon = this.getItemIcon(item.type);
+      const isWeapon = item.type.startsWith("wpn_");
 
-      // Glow
-      c.globalAlpha = 0.4 + Math.sin(time / 300 + item.pos.x) * 0.15;
+      // Floating bob
+      const bob = Math.sin(time / 400 + item.pos.x * 0.1) * 2;
+      const baseRadius = isWeapon ? 13 : 10;
+      // Glow ring
+      c.globalAlpha = 0.25 + Math.sin(time / 300 + item.pos.x) * 0.15;
       c.fillStyle = color;
       c.beginPath();
-      c.arc(item.pos.x, item.pos.y, 10, 0, Math.PI * 2);
+      c.arc(item.pos.x, item.pos.y + bob, baseRadius + 3, 0, Math.PI * 2);
       c.fill();
       c.globalAlpha = 1;
 
-      // Icon
-      c.fillStyle = "#fff";
-      c.font = "bold 10px Inter, sans-serif";
+      // Background circle
+      c.fillStyle = "rgba(10,10,12,0.85)";
+      c.beginPath();
+      c.arc(item.pos.x, item.pos.y + bob, baseRadius, 0, Math.PI * 2);
+      c.fill();
+
+      // Colored border
+      c.strokeStyle = color;
+      c.lineWidth = isWeapon ? 2 : 1.5;
+      c.beginPath();
+      c.arc(item.pos.x, item.pos.y + bob, baseRadius, 0, Math.PI * 2);
+      c.stroke();
+
+      // Icon text
+      c.fillStyle = color;
+      c.font = isWeapon ? "bold 9px Oswald, sans-serif" : "bold 10px Inter, sans-serif";
       c.textAlign = "center";
-      c.fillText(icon, item.pos.x, item.pos.y + 4);
+      c.fillText(icon, item.pos.x, item.pos.y + bob + 4);
       c.textAlign = "start";
     }
   }
 
   private renderGlooWalls(c: CanvasRenderingContext2D): void {
+    const time = performance.now();
     for (const gw of this.state.glooWalls) {
       c.save();
       c.translate(gw.pos.x, gw.pos.y);
       c.rotate(gw.rotation);
 
-      // Ice wall body
       const pct = gw.health / gw.maxHealth;
-      const alpha = 0.3 + pct * 0.5;
-      c.fillStyle = `rgba(0,229,255,${alpha})`;
-      c.fillRect(-gw.width / 2, -gw.height / 2, gw.width, gw.height);
+      const w = gw.width;
+      const h = 10;
+
+      // Outer glow
+      c.shadowColor = "rgba(0,229,255,0.4)";
+      c.shadowBlur = 8 + Math.sin(time / 200) * 3;
+
+      // Ice body
+      const grad = c.createLinearGradient(-w / 2, 0, w / 2, 0);
+      grad.addColorStop(0, `rgba(0,180,230,${0.4 + pct * 0.3})`);
+      grad.addColorStop(0.5, `rgba(0,229,255,${0.5 + pct * 0.4})`);
+      grad.addColorStop(1, `rgba(0,180,230,${0.4 + pct * 0.3})`);
+      c.fillStyle = grad;
+      this.roundRect(c, -w / 2, -h / 2, w, h, 3);
+      c.fill();
 
       // Border
-      c.strokeStyle = `rgba(0,229,255,${0.5 + pct * 0.5})`;
-      c.lineWidth = 2;
-      c.strokeRect(-gw.width / 2, -gw.height / 2, gw.width, gw.height);
+      c.strokeStyle = `rgba(0,255,255,${0.6 + pct * 0.4})`;
+      c.lineWidth = 1.5;
+      this.roundRect(c, -w / 2, -h / 2, w, h, 3);
+      c.stroke();
 
-      // Frost effect
-      c.fillStyle = "rgba(255,255,255,0.15)";
-      c.fillRect(-gw.width / 2 + 4, -2, gw.width - 8, 4);
+      // Frost crystal lines
+      c.shadowBlur = 0;
+      c.strokeStyle = "rgba(255,255,255,0.2)";
+      c.lineWidth = 0.8;
+      const segments = 4;
+      for (let i = 0; i < segments; i++) {
+        const sx = -w / 2 + (w / segments) * i + w / segments / 2;
+        c.beginPath();
+        c.moveTo(sx, -h / 2 + 1);
+        c.lineTo(sx + (Math.random() - 0.5) * 8, h / 2 - 1);
+        c.stroke();
+      }
+
+      // Top highlight
+      c.fillStyle = "rgba(255,255,255,0.12)";
+      c.fillRect(-w / 2 + 3, -h / 2 + 1, w - 6, 2);
 
       c.restore();
     }
@@ -1478,63 +1571,94 @@ export class GameEngine {
     c.translate(player.pos.x, player.pos.y);
 
     // Shadow
-    c.fillStyle = "rgba(0,0,0,0.3)";
+    c.fillStyle = "rgba(0,0,0,0.35)";
     c.beginPath();
-    c.ellipse(0, player.radius + 3, player.radius * 0.9, 5, 0, 0, Math.PI * 2);
+    c.ellipse(2, player.radius + 4, player.radius * 0.85, 5, 0, 0, Math.PI * 2);
     c.fill();
 
-    // Body — directional top-down rendering
     const bodyLen = player.isCrouching ? 18 : 24;
     const bodyWid = player.isCrouching ? 16 : 14;
 
     c.rotate(player.facing);
 
-    // Torso (oval)
-    c.fillStyle = player.color;
-    c.beginPath();
-    c.ellipse(0, 0, bodyLen / 2, bodyWid / 2, 0, 0, Math.PI * 2);
-    c.fill();
-
-    // Darker inner area
-    c.fillStyle = "rgba(0,0,0,0.15)";
-    c.beginPath();
-    c.ellipse(2, 0, bodyLen / 4, bodyWid / 3, 0, 0, Math.PI * 2);
-    c.fill();
-
-    // Head (circle at front)
+    // --- ARM / HAND holding weapon (behind body) ---
     c.fillStyle = this.skinColor(player.color);
     c.beginPath();
-    c.arc(bodyLen / 2 - 3, 0, 5, 0, Math.PI * 2);
+    c.ellipse(bodyLen / 2 - 6, 5, 4, 3, 0.3, 0, Math.PI * 2);
     c.fill();
 
-    // Weapon barrel
-    c.fillStyle = "#555";
-    c.fillRect(bodyLen / 2 - 2, -2, 12, 4);
-    c.fillStyle = "#333";
-    c.fillRect(bodyLen / 2 + 6, -1.5, 6, 3);
+    // --- TORSO ---
+    // Outer body
+    const darkerColor = this.darkenColor(player.color, 0.7);
+    c.fillStyle = darkerColor;
+    c.beginPath();
+    c.ellipse(0, 0, bodyLen / 2 + 1, bodyWid / 2 + 1, 0, 0, Math.PI * 2);
+    c.fill();
+    // Inner body
+    c.fillStyle = player.color;
+    c.beginPath();
+    c.ellipse(-1, 0, bodyLen / 2 - 1, bodyWid / 2 - 1, 0, 0, Math.PI * 2);
+    c.fill();
+    // Core highlight
+    c.fillStyle = "rgba(255,255,255,0.08)";
+    c.beginPath();
+    c.ellipse(-3, -2, bodyLen / 4, bodyWid / 4, 0, 0, Math.PI * 2);
+    c.fill();
 
-    // Armor visual indicator
-    if (player.armor.level > 0) {
-      c.strokeStyle = "#666";
-      c.lineWidth = 1.5;
+    // --- HEAD ---
+    c.fillStyle = this.skinColor(player.color);
+    c.beginPath();
+    c.arc(bodyLen / 2 - 2, 0, 5.5, 0, Math.PI * 2);
+    c.fill();
+    // Helmet cover
+    if (player.helmet.level > 0) {
+      const helmetAlpha = 0.3 + player.helmet.level * 0.12;
+      c.fillStyle = `rgba(160,170,180,${helmetAlpha})`;
       c.beginPath();
-      c.ellipse(0, 0, bodyLen / 2 + 2, bodyWid / 2 + 2, 0, 0, Math.PI * 2);
+      c.arc(bodyLen / 2 - 2, 0, 6.5, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = `rgba(200,210,220,${helmetAlpha + 0.1})`;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.arc(bodyLen / 2 - 2, 0, 6.5, -0.5, 0.5);
       c.stroke();
     }
 
-    // Helmet visual indicator
-    if (player.helmet.level > 0) {
-      c.fillStyle = `rgba(150,150,150,0.4)`;
+    // --- WEAPON (weapon-specific rendering) ---
+    this.renderWeaponOnPlayer(c, player.weapon, bodyLen);
+
+    // --- ARMOR ring ---
+    if (player.armor.level > 0) {
+      const armorColors = ["", "#4a5568", "#718096", "#a0aec0", "#e2e8f0"];
+      c.strokeStyle = armorColors[player.armor.level];
+      c.lineWidth = 1.5;
       c.beginPath();
-      c.arc(bodyLen / 2 - 3, 0, 6, 0, Math.PI * 2);
-      c.fill();
+      c.ellipse(0, 0, bodyLen / 2 + 3, bodyWid / 2 + 3, 0, 0, Math.PI * 2);
+      c.stroke();
     }
 
     c.rotate(-player.facing);
 
-    // Crouch indicator
+    // --- SPRINT TRAIL ---
+    if (player.isSprinting) {
+      c.globalAlpha = 0.15;
+      for (let i = 1; i <= 3; i++) {
+        c.fillStyle = player.color;
+        c.beginPath();
+        c.arc(
+          -Math.cos(player.facing) * i * 6,
+          -Math.sin(player.facing) * i * 6,
+          player.radius - i * 2,
+          0, Math.PI * 2,
+        );
+        c.fill();
+      }
+      c.globalAlpha = 1;
+    }
+
+    // --- CROUCH RING ---
     if (player.isCrouching) {
-      c.strokeStyle = "rgba(255,255,255,0.3)";
+      c.strokeStyle = "rgba(255,255,255,0.25)";
       c.lineWidth = 1;
       c.setLineDash([3, 3]);
       c.beginPath();
@@ -1545,43 +1669,151 @@ export class GameEngine {
 
     c.restore();
 
-    // Health bar
-    const barW = 28;
-    const barH = 3;
+    // --- HEALTH BAR ---
+    const barW = 30;
+    const barH = 3.5;
     const barX = player.pos.x - barW / 2;
-    const barY = player.pos.y - player.radius - 14;
+    const barY = player.pos.y - player.radius - 16;
 
-    c.fillStyle = "rgba(0,0,0,0.6)";
-    c.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+    // Background
+    c.fillStyle = "rgba(0,0,0,0.7)";
+    this.roundRect(c, barX - 1, barY - 1, barW + 2, barH + 2, 2);
+    c.fill();
 
     const healthPct = player.health / player.maxHealth;
-    c.fillStyle = healthPct > 0.5 ? "#22c55e" : healthPct > 0.25 ? "#f59e0b" : "#ff2b3d";
-    c.fillRect(barX, barY, barW * healthPct, barH);
-
-    // Armor bar (small, above health)
-    if (player.armor.level > 0) {
-      const armorPct = player.armor.durability / player.armor.maxDurability;
-      c.fillStyle = "rgba(0,0,0,0.4)";
-      c.fillRect(barX, barY - 4, barW, 2);
-      c.fillStyle = "#94a3b8";
-      c.fillRect(barX, barY - 4, barW * armorPct, 2);
+    const hpColor = healthPct > 0.5 ? "#22c55e" : healthPct > 0.25 ? "#f59e0b" : "#ff2b3d";
+    if (healthPct > 0) {
+      c.fillStyle = hpColor;
+      this.roundRect(c, barX, barY, barW * healthPct, barH, 1.5);
+      c.fill();
     }
 
-    // Name
+    // --- ARMOR BAR (above HP) ---
+    if (player.armor.level > 0) {
+      const armorPct = player.armor.durability / player.armor.maxDurability;
+      c.fillStyle = "rgba(0,0,0,0.5)";
+      c.fillRect(barX, barY - 4, barW, 2.5);
+      c.fillStyle = "#94a3b8";
+      if (armorPct > 0) c.fillRect(barX, barY - 4, barW * armorPct, 2.5);
+    }
+
+    // --- NAME TAG ---
     c.fillStyle = isHuman ? "#ffcc00" : "rgba(255,255,255,0.7)";
     c.font = `${isHuman ? "bold " : ""}10px Inter, sans-serif`;
     c.textAlign = "center";
-    c.fillText(player.name, player.pos.x, barY - 6);
+    c.fillText(player.name, player.pos.x, barY - 7);
     c.textAlign = "start";
 
-    // Human indicator ring
+    // --- HUMAN INDICATOR ---
     if (isHuman) {
-      c.strokeStyle = "rgba(255,204,0,0.5)";
+      c.strokeStyle = "rgba(255,204,0,0.4)";
       c.lineWidth = 1.5;
       c.beginPath();
-      c.arc(player.pos.x, player.pos.y, player.radius + 5, 0, Math.PI * 2);
+      c.arc(player.pos.x, player.pos.y, player.radius + 6, 0, Math.PI * 2);
       c.stroke();
     }
+  }
+
+  private renderWeaponOnPlayer(c: CanvasRenderingContext2D, weapon: WeaponType, bodyLen: number): void {
+    switch (weapon) {
+      case "pistol":
+        // Small compact pistol
+        c.fillStyle = "#444";
+        c.fillRect(bodyLen / 2 - 2, -2, 10, 4);
+        c.fillStyle = "#333";
+        c.fillRect(bodyLen / 2 + 4, -1.5, 5, 3);
+        break;
+      case "smg":
+        // SMG — shorter barrel, larger body
+        c.fillStyle = "#3a3a3a";
+        c.fillRect(bodyLen / 2 - 4, -3, 14, 6);
+        c.fillStyle = "#555";
+        c.fillRect(bodyLen / 2 + 6, -2, 6, 4);
+        // Magazine
+        c.fillStyle = "#2a2a2a";
+        c.fillRect(bodyLen / 2 - 1, 3, 4, 5);
+        break;
+      case "rifle":
+        // Assault rifle — long barrel
+        c.fillStyle = "#3a3a3a";
+        c.fillRect(bodyLen / 2 - 3, -3, 18, 6);
+        c.fillStyle = "#555";
+        c.fillRect(bodyLen / 2 + 10, -2, 8, 4);
+        // Magazine
+        c.fillStyle = "#2a2a2a";
+        c.fillRect(bodyLen / 2 + 2, 3, 5, 6);
+        break;
+      case "shotgun":
+        // Shotgun — wide barrel
+        c.fillStyle = "#4a3a2a";
+        c.fillRect(bodyLen / 2 - 3, -4, 16, 8);
+        c.fillStyle = "#333";
+        c.fillRect(bodyLen / 2 + 8, -2.5, 7, 5);
+        break;
+      case "sniper":
+        // Sniper — very long thin barrel
+        c.fillStyle = "#333";
+        c.fillRect(bodyLen / 2 - 3, -2, 24, 4);
+        c.fillStyle = "#555";
+        c.fillRect(bodyLen / 2 + 17, -1.5, 6, 3);
+        // Scope
+        c.fillStyle = "#2244aa";
+        c.beginPath();
+        c.arc(bodyLen / 2 + 6, -5, 3, 0, Math.PI * 2);
+        c.fill();
+        break;
+    }
+  }
+
+  private renderCrosshair(c: CanvasRenderingContext2D, player: Player): void {
+    const len = 28;
+    const gap = 8;
+    const cx = player.pos.x + Math.cos(player.facing) * (len + 5);
+    const cy = player.pos.y + Math.sin(player.facing) * (len + 5);
+
+    c.strokeStyle = "rgba(255,255,255,0.5)";
+    c.lineWidth = 1.5;
+
+    // 4 crosshair lines
+    const cos = Math.cos(player.facing);
+    const sin = Math.sin(player.facing);
+    const perpX = -sin;
+    const perpY = cos;
+
+    // Top
+    c.beginPath();
+    c.moveTo(cx + perpX * gap, cy + perpY * gap);
+    c.lineTo(cx + perpX * len, cy + perpY * len);
+    c.stroke();
+    // Bottom
+    c.beginPath();
+    c.moveTo(cx - perpX * gap, cy - perpY * gap);
+    c.lineTo(cx - perpX * len, cy - perpY * len);
+    c.stroke();
+    // Left
+    c.beginPath();
+    c.moveTo(cx + cos * gap, cy + sin * gap);
+    c.lineTo(cx + cos * len, cy + sin * len);
+    c.stroke();
+    // Right
+    c.beginPath();
+    c.moveTo(cx - cos * gap, cy - sin * gap);
+    c.lineTo(cx - cos * len, cy - sin * len);
+    c.stroke();
+
+    // Center dot
+    c.fillStyle = "rgba(255,255,255,0.7)";
+    c.beginPath();
+    c.arc(cx, cy, 1.5, 0, Math.PI * 2);
+    c.fill();
+
+    // Aim line (faint line from player to crosshair)
+    c.strokeStyle = "rgba(255,255,255,0.08)";
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(player.pos.x + cos * 15, player.pos.y + sin * 15);
+    c.lineTo(cx, cy);
+    c.stroke();
   }
 
   private renderBullets(c: CanvasRenderingContext2D): void {
@@ -1639,6 +1871,8 @@ export class GameEngine {
       vest_1: "#64748b", vest_2: "#94a3b8", vest_3: "#cbd5e1", vest_4: "#f8fafc",
       helmet_1: "#64748b", helmet_2: "#94a3b8", helmet_3: "#cbd5e1", helmet_4: "#f8fafc",
       speed_boost: "#3b82f6",
+      wpn_pistol: "#f59e0b", wpn_smg: "#ef4444", wpn_rifle: "#22c55e",
+      wpn_shotgun: "#f97316", wpn_sniper: "#a855f7",
     };
     return colors[type] || "#fff";
   }
@@ -1646,11 +1880,34 @@ export class GameEngine {
   private getItemIcon(type: ItemType): string {
     const icons: Record<string, string> = {
       health: "+", medkit: "M", bandage: "B",
-      ep_boost: "E", ammo: "•", gloo_wall: "G",
+      ep_boost: "E", ammo: "A", gloo_wall: "G",
       vest_1: "V1", vest_2: "V2", vest_3: "V3", vest_4: "V4",
       helmet_1: "H1", helmet_2: "H2", helmet_3: "H3", helmet_4: "H4",
-      speed_boost: "»",
+      speed_boost: "S",
+      wpn_pistol: "PIS", wpn_smg: "SMG", wpn_rifle: "RIF",
+      wpn_shotgun: "SG", wpn_sniper: "SNI",
     };
     return icons[type] || "?";
+  }
+
+  private darkenColor(hex: string, factor: number): string {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgb(${Math.floor(r * factor)},${Math.floor(g * factor)},${Math.floor(b * factor)})`;
+  }
+
+  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
   }
 }
