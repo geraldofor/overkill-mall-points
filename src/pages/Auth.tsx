@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/input-otp";
 
 import { useAuth } from "@/hooks/use-auth";
-import logo from "@/assets/logo.svg";
 import { ArrowRight, Loader2, Mail, UserX } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -110,42 +109,51 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-[#0b0b0d]">
+      {/* Caution stripe top */}
+      <div
+        className="h-2.5 w-full shrink-0"
+        style={{
+          background: `repeating-linear-gradient(45deg, #ffcc00, #ffcc00 14px, #1a1a1c 14px, #1a1a1c 28px)`,
+        }}
+      />
 
-      
       {/* Auth Content */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex items-center justify-center h-full flex-col">
-        <Card className="min-w-[350px] pb-0 border shadow-md">
+      <div
+        className="flex-1 flex items-center justify-center px-6"
+        style={{
+          background: `
+            radial-gradient(ellipse 900px 500px at 50% 0%, rgba(255,43,61,0.08), transparent 60%),
+            radial-gradient(ellipse 700px 400px at 15% 100%, rgba(255,204,0,0.03), transparent 60%)
+          `,
+        }}
+      >
+        <Card className="min-w-[350px] max-w-[400px] pb-0 border border-[#26262a] bg-[#141416] shadow-2xl">
           {step === "signIn" ? (
             <>
               <CardHeader className="text-center">
-              <div className="flex justify-center">
-                    <img
-                      src={logo}
-                      alt="Lock Icon"
-                      width={64}
-                      height={64}
-                      className="rounded-lg mb-4 mt-4 cursor-pointer"
-                      onClick={() => navigate("/")}
-                    />
+                <div className="flex justify-center mb-2">
+                  <div className="font-anton text-3xl tracking-tight text-[#f4f2ee]">
+                    OVER<span className="text-[#ff2b3d]">KILL</span>
                   </div>
-                <CardTitle className="text-xl">Get Started</CardTitle>
-                <CardDescription>
-                  Enter your email to log in or sign up
+                </div>
+                <CardTitle className="text-xl font-oswald tracking-wide text-[#f4f2ee]">
+                  ENTRAR NO SHOPPING
+                </CardTitle>
+                <CardDescription className="text-[#7c7c82]">
+                  Entre com seu email ou jogue como visitante
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleEmailSubmit}>
                 <CardContent>
-                  
                   <div className="relative flex items-center gap-2">
                     <div className="relative flex-1">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-[#7c7c82]" />
                       <Input
                         name="email"
-                        placeholder="name@example.com"
+                        placeholder="seu@email.com"
                         type="email"
-                        className="pl-9"
+                        className="pl-9 bg-[#0b0b0d] border-[#26262a] text-[#f4f2ee] placeholder:text-[#52525a] focus-visible:ring-[#ff2b3d]"
                         disabled={isLoading}
                         required
                       />
@@ -155,6 +163,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       variant="outline"
                       size="icon"
                       disabled={isLoading}
+                      className="border-[#26262a] bg-[#1a1a1c] hover:bg-[#ff2b3d] hover:border-[#ff2b3d] text-[#f4f2ee] cursor-pointer"
                     >
                       {isLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -164,30 +173,30 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     </Button>
                   </div>
                   {error && (
-                    <p className="mt-2 text-sm text-red-500">{error}</p>
+                    <p className="mt-2 text-sm text-[#ff2b3d]">{error}</p>
                   )}
-                  
+
                   <div className="mt-4">
                     <div className="relative">
                       <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
+                        <span className="w-full border-t border-[#26262a]" />
                       </div>
                       <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-background px-2 text-muted-foreground">
-                          Or
+                        <span className="bg-[#141416] px-2 text-[#7c7c82] font-oswald tracking-wider">
+                          Ou
                         </span>
                       </div>
                     </div>
-                    
+
                     <Button
                       type="button"
                       variant="outline"
-                      className="w-full mt-4"
+                      className="w-full mt-4 border-[#26262a] bg-[#1a1a1c] hover:bg-[#26262a] text-[#f4f2ee] font-oswald tracking-wider cursor-pointer"
                       onClick={handleGuestLogin}
                       disabled={isLoading}
                     >
                       <UserX className="mr-2 h-4 w-4" />
-                      Continue as Guest
+                      Entrar como Visitante
                     </Button>
                   </div>
                 </CardContent>
@@ -196,9 +205,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           ) : (
             <>
               <CardHeader className="text-center mt-4">
-                <CardTitle>Check your email</CardTitle>
-                <CardDescription>
-                  We've sent a code to {step.email}
+                <CardTitle className="font-oswald tracking-wide text-[#f4f2ee]">
+                  Verifique seu email
+                </CardTitle>
+                <CardDescription className="text-[#7c7c82]">
+                  Enviamos um código para {step.email}
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleOtpSubmit}>
@@ -214,7 +225,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       disabled={isLoading}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && otp.length === 6 && !isLoading) {
-                          // Find the closest form and submit it
                           const form = (e.target as HTMLElement).closest("form");
                           if (form) {
                             form.requestSubmit();
@@ -224,41 +234,45 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     >
                       <InputOTPGroup>
                         {Array.from({ length: 6 }).map((_, index) => (
-                          <InputOTPSlot key={index} index={index} />
+                          <InputOTPSlot
+                            key={index}
+                            index={index}
+                            className="bg-[#0b0b0d] border-[#26262a] text-[#f4f2ee] focus-visible:ring-[#ff2b3d]"
+                          />
                         ))}
                       </InputOTPGroup>
                     </InputOTP>
                   </div>
                   {error && (
-                    <p className="mt-2 text-sm text-red-500 text-center">
+                    <p className="mt-2 text-sm text-[#ff2b3d] text-center">
                       {error}
                     </p>
                   )}
-                  <p className="text-sm text-muted-foreground text-center mt-4">
-                    Didn't receive a code?{" "}
+                  <p className="text-sm text-[#7c7c82] text-center mt-4">
+                    Não recebeu o código?{" "}
                     <Button
                       variant="link"
-                      className="p-0 h-auto"
+                      className="p-0 h-auto text-[#ff2b3d] hover:text-[#ff1526]"
                       onClick={() => setStep("signIn")}
                     >
-                      Try again
+                      Tentar novamente
                     </Button>
                   </p>
                 </CardContent>
                 <CardFooter className="flex-col gap-2">
                   <Button
                     type="submit"
-                    className="w-full"
+                    className="w-full bg-[#ff2b3d] hover:bg-[#ff1526] text-white font-oswald tracking-wider cursor-pointer"
                     disabled={isLoading || otp.length !== 6}
                   >
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Verifying...
+                        Verificando...
                       </>
                     ) : (
                       <>
-                        Verify code
+                        Verificar código
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </>
                     )}
@@ -268,28 +282,20 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     variant="ghost"
                     onClick={() => setStep("signIn")}
                     disabled={isLoading}
-                    className="w-full"
+                    className="w-full text-[#7c7c82] hover:text-[#f4f2ee] hover:bg-[#1a1a1c] cursor-pointer"
                   >
-                    Use different email
+                    Usar outro email
                   </Button>
                 </CardFooter>
               </form>
             </>
           )}
 
-          <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-            Secured by{" "}
-            <a
-              href="https://freebuff.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-primary transition-colors"
-            >
-              freebuff.com
-            </a>
+          <div className="py-4 px-6 text-xs text-center text-[#52525a] bg-[#0b0b0d] border-t border-[#26262a] rounded-b-lg font-oswald tracking-wider uppercase">
+            Protótipo interno —{" "}
+            <span className="text-[#7c7c82]">Overkill Mall</span>
           </div>
         </Card>
-        </div>
       </div>
     </div>
   );
