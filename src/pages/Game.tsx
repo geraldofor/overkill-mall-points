@@ -121,6 +121,12 @@ export default function Game() {
       setGameState({ ...state });
     });
 
+    // Human player died — show results immediately
+    engine.onHumanDeathFn((state: GameState) => {
+      setGameState({ ...state });
+      setTimeout(() => setShowResults(true), 1500);
+    });
+
     engine.start(
       {
         mapId: map.id,
@@ -358,8 +364,8 @@ export default function Game() {
             ))}
           </div>
 
-          {/* Minimap — bottom right (smaller on mobile) */}
-          <div className={`absolute bottom-16 sm:bottom-4 right-2 sm:right-4 pointer-events-none z-10 ${isMobile ? "w-24 h-24" : "w-36 h-36"}`}>
+          {/* Minimap — mobile: top-right below killfeed, desktop: bottom-right */}
+          <div className={`absolute ${isMobile ? 'top-28 right-2 w-20 h-20' : 'bottom-4 right-4 w-36 h-36'} pointer-events-none z-10`}>
             <div className="w-full h-full bg-[#0b0b0d]/90 border border-[#26262a] rounded overflow-hidden relative">
               <Minimap gameState={gameState} humanId={human.id} size={isMobile ? 96 : 144} />
             </div>
@@ -397,37 +403,33 @@ export default function Game() {
             </div>
           </div>
 
-          {/* ── MOBILE: Action Buttons (split left/right) ── */}
+          {/* ── MOBILE: Action Buttons LEFT + D-pad RIGHT ── */}
           {isMobile && !isPortrait && (
             <>
-              {/* RIGHT SIDE: Reload + Gloo Wall (big, combat buttons) */}
-              <div className="absolute bottom-20 right-4 z-20 flex flex-row gap-3 pointer-events-auto">
-                {/* Reload — big yellow */}
+              {/* LEFT SIDE: Action buttons (Reload, Gloo Wall, Bandage, Medkit) */}
+              <div className="absolute bottom-20 left-3 z-20 flex flex-col gap-2 pointer-events-auto">
+                {/* Reload — yellow */}
                 <button
                   onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("r"); }}
-                  className="w-14 h-14 bg-[#ffcc00]/20 border-2 border-[#ffcc00]/60 rounded-full flex items-center justify-center active:bg-[#ffcc00]/50 active:scale-95 touch-none shadow-lg"
+                  className="w-12 h-12 bg-[#ffcc00]/20 border-2 border-[#ffcc00]/60 rounded-full flex items-center justify-center active:bg-[#ffcc00]/50 active:scale-95 touch-none shadow-lg"
                 >
-                  <RotateCcw className="size-6 text-[#ffcc00]" />
+                  <RotateCcw className="size-5 text-[#ffcc00]" />
                 </button>
-                {/* Gloo Wall — big cyan */}
+                {/* Gloo Wall — cyan */}
                 <button
                   onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("g"); }}
-                  className="w-14 h-14 bg-[#00e5ff]/20 border-2 border-[#00e5ff]/60 rounded-full flex items-center justify-center active:bg-[#00e5ff]/50 active:scale-95 touch-none shadow-lg"
+                  className="w-12 h-12 bg-[#00e5ff]/20 border-2 border-[#00e5ff]/60 rounded-full flex items-center justify-center active:bg-[#00e5ff]/50 active:scale-95 touch-none shadow-lg"
                 >
-                  <Snowflake className="size-6 text-[#00e5ff]" />
+                  <Snowflake className="size-5 text-[#00e5ff]" />
                 </button>
-              </div>
-
-              {/* LEFT SIDE: Bandage + Medkit (healing, above joystick) */}
-              <div className="absolute bottom-20 left-4 z-20 flex flex-row gap-2 pointer-events-auto">
-                {/* Bandage */}
+                {/* Bandage — green */}
                 <button
                   onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("4"); }}
                   className="w-11 h-11 bg-[#4ade80]/20 border-2 border-[#4ade80]/50 rounded-full flex items-center justify-center active:bg-[#4ade80]/50 active:scale-95 touch-none"
                 >
                   <span className="font-oswald text-xs font-bold text-[#4ade80]">B</span>
                 </button>
-                {/* Medkit */}
+                {/* Medkit — dark green */}
                 <button
                   onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("5"); }}
                   className="w-11 h-11 bg-[#16a34a]/20 border-2 border-[#16a34a]/50 rounded-full flex items-center justify-center active:bg-[#16a34a]/50 active:scale-95 touch-none"
@@ -435,15 +437,33 @@ export default function Game() {
                   <span className="font-oswald text-xs font-bold text-[#16a34a]">M</span>
                 </button>
               </div>
+
+              {/* RIGHT SIDE: D-pad / Joystick visual area */}
+              <div className="absolute bottom-20 right-4 z-15 pointer-events-none">
+                <div className="relative w-28 h-28">
+                  {/* D-pad background circle */}
+                  <div className="absolute inset-0 rounded-full border-2 border-[#f4f2ee]/15 bg-[#0b0b0d]/30" />
+                  {/* D-pad cross lines */}
+                  <div className="absolute top-1/2 left-2 right-2 h-px bg-[#f4f2ee]/10 -translate-y-1/2" />
+                  <div className="absolute left-1/2 top-2 bottom-2 w-px bg-[#f4f2ee]/10 -translate-x-1/2" />
+                  {/* Direction arrows */}
+                  <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[#f4f2ee]/25 text-xs font-oswald">W</div>
+                  <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[#f4f2ee]/25 text-xs font-oswald">S</div>
+                  <div className="absolute left-1 top-1/2 -translate-y-1/2 text-[#f4f2ee]/25 text-xs font-oswald">A</div>
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[#f4f2ee]/25 text-xs font-oswald">D</div>
+                  {/* Center dot */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#f4f2ee]/20" />
+                </div>
+              </div>
             </>
           )}
 
-{/* Mobile joystick hint */}
+          {/* Mobile hint */}
           {isMobile && (
-            <div className="absolute bottom-4 left-4 pointer-events-none z-10">
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none z-10">
               <div className="bg-[#141416]/60 rounded px-2 py-1">
                 <span className="font-oswald text-[9px] text-[#52525a] uppercase">
-                  Esq=mover | Dir=atirar
+                  Dir=mover | Esq=atirar | Acoes: canto inferior esquerdo
                 </span>
               </div>
             </div>

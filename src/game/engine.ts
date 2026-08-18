@@ -84,6 +84,7 @@ export class GameEngine {
   private humanId: string = "";
   private _onUpdate: ((state: GameState) => void) | null = null;
   private _onGameOver: ((state: GameState) => void) | null = null;
+  private _onHumanDeath: ((state: GameState) => void) | null = null;
 
   // Touch controls
   private touchJoystick = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
@@ -143,6 +144,10 @@ export class GameEngine {
 
   onGameOverFn(fn: (state: GameState) => void): void {
     this._onGameOver = fn;
+  }
+
+  onHumanDeathFn(fn: (state: GameState) => void): void {
+    this._onHumanDeath = fn;
   }
 
   // ==================================================================
@@ -415,8 +420,8 @@ export class GameEngine {
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
 
-      // Left half = joystick, right half = aim+shoot
-      if (x < displayW * 0.45) {
+      // Right half = joystick (movement), left half = aim+shoot
+      if (x > displayW * 0.55) {
         this.touchJoystick = { active: true, startX: x, startY: y, x, y };
       } else {
         this.touchShoot = { active: true, x: touch.clientX, y: touch.clientY };
@@ -455,7 +460,7 @@ export class GameEngine {
       const rect = this.canvas.getBoundingClientRect();
       const displayW = rect.width;
       const x = touch.clientX - rect.left;
-      if (x < displayW * 0.45) {
+      if (x > displayW * 0.55) {
         this.touchJoystick = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
       } else {
         this.touchShoot = { active: false, x: 0, y: 0 };
@@ -1164,6 +1169,11 @@ export class GameEngine {
             player.alive = false;
             player.placement = s.aliveCount;
 
+            // Human player died — show results immediately
+            if (player.id === this.humanId) {
+              this._onHumanDeath?.(s);
+            }
+
             // Killer stats
             if (attacker) {
               attacker.kills++;
@@ -1246,6 +1256,10 @@ export class GameEngine {
           player.health = 0;
           player.alive = false;
           player.placement = this.state.aliveCount;
+          // Human player died from zone — show results immediately
+          if (player.id === this.humanId) {
+            this._onHumanDeath?.(this.state);
+          }
           this.addKillFeed({ killerName: "⚡ ZONA", victimName: player.name, isHeadshot: false, timestamp: this.state.matchTime });
           this.spawnParticles(player.pos.x, player.pos.y, "#ff2b3d", 12, "death");
         }

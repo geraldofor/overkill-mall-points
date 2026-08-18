@@ -11,6 +11,7 @@ import {
   Zap,
   MapPin,
   ChevronRight,
+  Users,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -231,6 +232,23 @@ export default function Dashboard() {
                 </Card>
               );
             })}
+          </div>
+
+          {/* Multiplayer button */}
+          <div className="mt-6">
+            <button
+              onClick={() => navigate("/lobby")}
+              className="w-full py-3.5 bg-[#ffcc00]/10 border-2 border-[#ffcc00]/40 rounded-lg font-oswald text-sm tracking-wider text-[#ffcc00] hover:bg-[#ffcc00]/20 hover:border-[#ffcc00]/60 transition-all uppercase flex items-center justify-center gap-2"
+            >
+              <Users className="size-5" />
+              Multiplayer Online
+              <span className="font-oswald text-[9px] bg-[#ffcc00]/20 px-2 py-0.5 rounded-full ml-1">
+                NOVO
+              </span>
+            </button>
+            <p className="font-oswald text-[9px] text-[#52525a] text-center mt-1.5">
+              Crie salas e jogue com seus amigos online
+            </p>
           </div>
 
           {/* Quick stats footer */}

@@ -74,6 +74,48 @@ const schema = defineSchema(
       bestPlacement: v.number(),
       updatedAt: v.number(),
     }).index("by_score", ["totalScore"]),
+
+    // ── Multiplayer Rooms ──
+    gameRooms: defineTable({
+      roomCode: v.string(),
+      roomName: v.string(),
+      hostId: v.string(),
+      hostName: v.string(),
+      mapId: v.string(),
+      maxPlayers: v.number(),
+      currentPlayers: v.number(),
+      botCount: v.number(),
+      status: v.union(v.literal("waiting"), v.literal("playing"), v.literal("finished")),
+      createdAt: v.number(),
+      startedAt: v.optional(v.number()),
+      matchId: v.optional(v.id("matches")),
+    }).index("by_code", ["roomCode"]).index("by_status", ["status"]),
+
+    // Players in a room
+    roomPlayers: defineTable({
+      roomId: v.id("gameRooms"),
+      userId: v.string(),
+      playerName: v.string(),
+      isReady: v.boolean(),
+      joinedAt: v.number(),
+    }).index("by_room", ["roomId"]).index("by_user_room", ["userId", "roomId"]),
+
+    // Real-time game state sync (positions, health, etc.)
+    gameStates: defineTable({
+      roomId: v.id("gameRooms"),
+      userId: v.string(),
+      playerName: v.string(),
+      x: v.number(),
+      y: v.number(),
+      health: v.number(),
+      weapon: v.string(),
+      alive: v.boolean(),
+      kills: v.number(),
+      facing: v.number(),
+      isCrouching: v.boolean(),
+      isSprinting: v.boolean(),
+      updatedAt: v.number(),
+    }).index("by_room", ["roomId"]),
   },
   {
     schemaValidation: false,
