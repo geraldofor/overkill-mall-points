@@ -117,14 +117,16 @@ export default function Game() {
     });
 
     engine.onGameOverFn((state: GameState) => {
-      setTimeout(() => setShowResults(true), 2000);
+      engine.stop();
       setGameState({ ...state });
+      setTimeout(() => setShowResults(true), 800);
     });
 
-    // Human player died — show results immediately
+    // Human player died — show results fast
     engine.onHumanDeathFn((state: GameState) => {
       setGameState({ ...state });
-      setTimeout(() => setShowResults(true), 1500);
+      engine.stop();
+      setTimeout(() => setShowResults(true), 500);
     });
 
     engine.start(
@@ -403,57 +405,52 @@ export default function Game() {
             </div>
           </div>
 
-          {/* ── MOBILE: Action Buttons LEFT + D-pad RIGHT ── */}
+          {/* ── MOBILE: D-pad LEFT + Action Buttons RIGHT ── */}
           {isMobile && !isPortrait && (
             <>
-              {/* LEFT SIDE: Action buttons (Reload, Gloo Wall, Bandage, Medkit) */}
-              <div className="absolute bottom-20 left-3 z-20 flex flex-col gap-2 pointer-events-auto">
-                {/* Reload — yellow */}
-                <button
-                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("r"); }}
-                  className="w-12 h-12 bg-[#ffcc00]/20 border-2 border-[#ffcc00]/60 rounded-full flex items-center justify-center active:bg-[#ffcc00]/50 active:scale-95 touch-none shadow-lg"
-                >
-                  <RotateCcw className="size-5 text-[#ffcc00]" />
-                </button>
-                {/* Gloo Wall — cyan */}
-                <button
-                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("g"); }}
-                  className="w-12 h-12 bg-[#00e5ff]/20 border-2 border-[#00e5ff]/60 rounded-full flex items-center justify-center active:bg-[#00e5ff]/50 active:scale-95 touch-none shadow-lg"
-                >
-                  <Snowflake className="size-5 text-[#00e5ff]" />
-                </button>
-                {/* Bandage — green */}
-                <button
-                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("4"); }}
-                  className="w-11 h-11 bg-[#4ade80]/20 border-2 border-[#4ade80]/50 rounded-full flex items-center justify-center active:bg-[#4ade80]/50 active:scale-95 touch-none"
-                >
-                  <span className="font-oswald text-xs font-bold text-[#4ade80]">B</span>
-                </button>
-                {/* Medkit — dark green */}
-                <button
-                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("5"); }}
-                  className="w-11 h-11 bg-[#16a34a]/20 border-2 border-[#16a34a]/50 rounded-full flex items-center justify-center active:bg-[#16a34a]/50 active:scale-95 touch-none"
-                >
-                  <span className="font-oswald text-xs font-bold text-[#16a34a]">M</span>
-                </button>
-              </div>
-
-              {/* RIGHT SIDE: D-pad / Joystick visual area */}
-              <div className="absolute bottom-20 right-4 z-15 pointer-events-none">
+              {/* LEFT SIDE: D-pad / Joystick visual area */}
+              <div className="absolute bottom-20 left-4 z-15 pointer-events-none">
                 <div className="relative w-28 h-28">
                   {/* D-pad background circle */}
                   <div className="absolute inset-0 rounded-full border-2 border-[#f4f2ee]/15 bg-[#0b0b0d]/30" />
                   {/* D-pad cross lines */}
                   <div className="absolute top-1/2 left-2 right-2 h-px bg-[#f4f2ee]/10 -translate-y-1/2" />
                   <div className="absolute left-1/2 top-2 bottom-2 w-px bg-[#f4f2ee]/10 -translate-x-1/2" />
-                  {/* Direction arrows */}
-                  <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[#f4f2ee]/25 text-xs font-oswald">W</div>
-                  <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[#f4f2ee]/25 text-xs font-oswald">S</div>
-                  <div className="absolute left-1 top-1/2 -translate-y-1/2 text-[#f4f2ee]/25 text-xs font-oswald">A</div>
-                  <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[#f4f2ee]/25 text-xs font-oswald">D</div>
                   {/* Center dot */}
                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#f4f2ee]/20" />
                 </div>
+              </div>
+
+              {/* RIGHT SIDE: Action buttons (Reload, Gloo Wall, Bandage, Medkit) */}
+              <div className="absolute bottom-20 right-3 z-20 flex flex-col gap-2 pointer-events-auto">
+                {/* Reload — yellow */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("r"); }}
+                  className="w-14 h-14 bg-[#ffcc00]/20 border-2 border-[#ffcc00]/60 rounded-full flex items-center justify-center active:bg-[#ffcc00]/50 active:scale-95 touch-none shadow-lg"
+                >
+                  <RotateCcw className="size-6 text-[#ffcc00]" />
+                </button>
+                {/* Gloo Wall — cyan */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("g"); }}
+                  className="w-14 h-14 bg-[#00e5ff]/20 border-2 border-[#00e5ff]/60 rounded-full flex items-center justify-center active:bg-[#00e5ff]/50 active:scale-95 touch-none shadow-lg"
+                >
+                  <Snowflake className="size-6 text-[#00e5ff]" />
+                </button>
+                {/* Bandage — green */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("4"); }}
+                  className="w-12 h-12 bg-[#4ade80]/20 border-2 border-[#4ade80]/50 rounded-full flex items-center justify-center active:bg-[#4ade80]/50 active:scale-95 touch-none"
+                >
+                  <span className="font-oswald text-sm font-bold text-[#4ade80]">B</span>
+                </button>
+                {/* Medkit — dark green */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); pressAction("5"); }}
+                  className="w-12 h-12 bg-[#16a34a]/20 border-2 border-[#16a34a]/50 rounded-full flex items-center justify-center active:bg-[#16a34a]/50 active:scale-95 touch-none"
+                >
+                  <span className="font-oswald text-sm font-bold text-[#16a34a]">M</span>
+                </button>
               </div>
             </>
           )}
@@ -463,7 +460,7 @@ export default function Game() {
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none z-10">
               <div className="bg-[#141416]/60 rounded px-2 py-1">
                 <span className="font-oswald text-[9px] text-[#52525a] uppercase">
-                  Dir=mover | Esq=atirar | Acoes: canto inferior esquerdo
+                  Esq=mover | Dir=atirar | Acoes: canto inferior direito
                 </span>
               </div>
             </div>

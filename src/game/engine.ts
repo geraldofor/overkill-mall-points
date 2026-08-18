@@ -420,8 +420,8 @@ export class GameEngine {
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
 
-      // Right half = joystick (movement), left half = aim+shoot
-      if (x > displayW * 0.55) {
+      // Left half = joystick (movement), right half = aim+shoot (standard mobile shooter)
+      if (x < displayW * 0.45) {
         this.touchJoystick = { active: true, startX: x, startY: y, x, y };
       } else {
         this.touchShoot = { active: true, x: touch.clientX, y: touch.clientY };
@@ -460,7 +460,7 @@ export class GameEngine {
       const rect = this.canvas.getBoundingClientRect();
       const displayW = rect.width;
       const x = touch.clientX - rect.left;
-      if (x > displayW * 0.55) {
+      if (x < displayW * 0.45) {
         this.touchJoystick = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
       } else {
         this.touchShoot = { active: false, x: 0, y: 0 };
@@ -1169,8 +1169,9 @@ export class GameEngine {
             player.alive = false;
             player.placement = s.aliveCount;
 
-            // Human player died — show results immediately
+            // Human player died — stop engine and show results
             if (player.id === this.humanId) {
+              this.running = false;
               this._onHumanDeath?.(s);
             }
 
@@ -1256,8 +1257,9 @@ export class GameEngine {
           player.health = 0;
           player.alive = false;
           player.placement = this.state.aliveCount;
-          // Human player died from zone — show results immediately
+          // Human player died from zone — stop engine and show results
           if (player.id === this.humanId) {
+            this.running = false;
             this._onHumanDeath?.(this.state);
           }
           this.addKillFeed({ killerName: "⚡ ZONA", victimName: player.name, isHeadshot: false, timestamp: this.state.matchTime });
