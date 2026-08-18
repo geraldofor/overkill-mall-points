@@ -181,12 +181,14 @@ export default function Game() {
             </div>
             <div className="flex items-center gap-2 mt-1">
               <Crosshair className="size-3 text-[#7c7c82]" />
-              <span className="font-oswald text-xs text-[#7c7c82]">
+              <span className={`font-oswald text-xs ${human.ammo <= 10 ? "text-[#ff2b3d]" : "text-[#7c7c82]"}`}>
                 {human.ammo}/{human.maxAmmo}
               </span>
-              <span className="font-oswald text-[10px] text-[#52525a] ml-2">
-                [R] RECARGA
-              </span>
+              {human.ammo < human.maxAmmo && (
+                <span className="font-oswald text-[10px] text-[#ffcc00] ml-2 animate-pulse">
+                  [R] RECARGA
+                </span>
+              )}
             </div>
           </div>
 

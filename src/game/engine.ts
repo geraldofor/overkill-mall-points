@@ -56,8 +56,10 @@ export class GameEngine {
   private touchJoystick = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
   private touchShoot = { active: false, x: 0, y: 0 };
 
-  // Fire rate control
+  // Fire rate & reload control
   private lastFireTime = 0;
+  private isReloading = false;
+  private reloadStartTime = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -132,8 +134,8 @@ export class GameEngine {
       killstreak: 0,
       killstreakMax: 0,
       lastKillTime: 0,
-      ammo: 30,
-      maxAmmo: 30,
+      ammo: 60,
+      maxAmmo: 60,
       weapon: "rifle" as WeaponType,
       invulnerableUntil: 0,
     };
@@ -168,8 +170,8 @@ export class GameEngine {
         killstreak: 0,
         killstreakMax: 0,
         lastKillTime: 0,
-        ammo: 30,
-        maxAmmo: 30,
+        ammo: 60,
+        maxAmmo: 60,
         weapon: (["pistol", "rifle", "shotgun"] as WeaponType[])[
           Math.floor(Math.random() * 3)
         ],
@@ -471,16 +473,24 @@ export class GameEngine {
     // Shooting
     if (this.mouse.down || this.touchShoot.active) {
       const now = performance.now();
-      const fireRate = player.weapon === "shotgun" ? 600 : player.weapon === "rifle" ? 150 : 300;
-      if (now - this.lastFireTime > fireRate && player.ammo > 0) {
+      const fireRate = player.weapon === "shotgun" ? 900 : player.weapon === "rifle" ? 200 : 350;
+      if (now - this.lastFireTime > fireRate && player.ammo > 0 && !this.isReloading) {
         this.fireBullet(player);
         this.lastFireTime = now;
       }
     }
 
-    // Reload
-    if (this.keys.has("r") && player.ammo < player.maxAmmo) {
-      player.ammo = player.maxAmmo;
+    // Reload (press R — takes 2 seconds)
+    if (this.keys.has("r") && player.ammo < player.maxAmmo && !this.isReloading) {
+      this.isReloading = true;
+      this.reloadStartTime = performance.now();
+    }
+    if (this.isReloading) {
+      const elapsed = performance.now() - this.reloadStartTime;
+      if (elapsed >= 2000) {
+        player.ammo = player.maxAmmo;
+        this.isReloading = false;
+      }
     }
   }
 
@@ -635,7 +645,7 @@ export class GameEngine {
             entity.health = Math.min(entity.maxHealth, entity.health + 30);
             break;
           case "ammo":
-            entity.ammo = Math.min(entity.maxAmmo, entity.ammo + 10);
+            entity.ammo = Math.min(entity.maxAmmo, entity.ammo + 20);
             break;
           case "speed":
             // Temporary speed boost — we'll just add score
