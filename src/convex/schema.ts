@@ -2,7 +2,6 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { Infer, v } from "convex/values";
 
-// default user roles. can add / remove based on the project as needed
 export const ROLES = {
   ADMIN: "admin",
   USER: "user",
@@ -18,26 +17,63 @@ export type Role = Infer<typeof roleValidator>;
 
 const schema = defineSchema(
   {
-    // default auth tables using convex auth.
-    ...authTables, // do not remove or modify
+    ...authTables,
 
-    // the users table is the default users table that is brought in by the authTables
     users: defineTable({
-      name: v.optional(v.string()), // name of the user. do not remove
-      image: v.optional(v.string()), // image of the user. do not remove
-      email: v.optional(v.string()), // email of the user. do not remove
-      emailVerificationTime: v.optional(v.number()), // email verification time. do not remove
-      isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
+      name: v.optional(v.string()),
+      image: v.optional(v.string()),
+      email: v.optional(v.string()),
+      emailVerificationTime: v.optional(v.number()),
+      isAnonymous: v.optional(v.boolean()),
+      role: v.optional(roleValidator),
+      // Game profile
+      totalScore: v.optional(v.number()),
+      totalMatches: v.optional(v.number()),
+      totalWins: v.optional(v.number()),
+      totalKills: v.optional(v.number()),
+      level: v.optional(v.number()),
+    }).index("email", ["email"]),
 
-      role: v.optional(roleValidator), // role of the user. do not remove
-    }).index("email", ["email"]), // index for the email. do not remove or modify
+    // Individual match records
+    matches: defineTable({
+      mapId: v.string(),
+      mapName: v.string(),
+      winnerId: v.optional(v.string()),
+      winnerName: v.optional(v.string()),
+      totalPlayers: v.number(),
+      totalBots: v.number(),
+      duration: v.number(), // seconds
+      endedAt: v.number(),
+    }).index("by_endedAt", ["endedAt"]),
 
-    // add other tables here
+    // Per-player results in a match
+    matchPlayers: defineTable({
+      matchId: v.id("matches"),
+      userId: v.string(),
+      playerName: v.string(),
+      isBot: v.boolean(),
+      placement: v.number(),
+      kills: v.number(),
+      headshots: v.number(),
+      damageDealt: v.number(),
+      assists: v.number(),
+      survivalTime: v.number(),
+      itemsCollected: v.number(),
+      killstreakMax: v.number(),
+      totalScore: v.number(),
+    }).index("by_match", ["matchId"]).index("by_user", ["userId"]),
 
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    // Persistent leaderboard (updated after each match)
+    leaderboard: defineTable({
+      userId: v.string(),
+      playerName: v.string(),
+      totalScore: v.number(),
+      matches: v.number(),
+      wins: v.number(),
+      kills: v.number(),
+      bestPlacement: v.number(),
+      updatedAt: v.number(),
+    }).index("by_score", ["totalScore"]),
   },
   {
     schemaValidation: false,

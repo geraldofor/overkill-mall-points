@@ -1,5 +1,7 @@
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
+import { ALL_MAPS } from "@/game/maps";
+import { MapPin, Swords, Clock, Users, Zap, Shield, Target, Trophy } from "lucide-react";
 
 const TICKER_ITEMS = [
   { text: "ZONA FECHA EM BREVE", hot: true },
@@ -8,10 +10,31 @@ const TICKER_ITEMS = [
   { text: "ÚLTIMO ANDAR VENCE", hot: false },
 ];
 
-const STATS = [
-  { num: "13", lbl: "Setores" },
-  { num: "1–20", lbl: "Jogadores" },
-  { num: "~10min", lbl: "Por partida" },
+const FEATURES = [
+  {
+    icon: Swords,
+    title: "Combate Intenso",
+    desc: "Armas variadas, headshots, killstreaks. Cada abate conta.",
+    color: "#ff2b3d",
+  },
+  {
+    icon: Shield,
+    title: "Sobrevivência",
+    desc: "Zona contraindo, loot espalhado. Fique vivo até o final.",
+    color: "#3b82f6",
+  },
+  {
+    icon: Target,
+    title: "Sistema de Pontos",
+    desc: "Combate, posição, streaks. Tudo pontua na hora.",
+    color: "#ffcc00",
+  },
+  {
+    icon: Trophy,
+    title: "Ranking Global",
+    desc: "Compete pelo topo do leaderboard. Temporada 1 já começou.",
+    color: "#22c55e",
+  },
 ];
 
 export default function Landing() {
@@ -41,9 +64,9 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* Main content */}
+      {/* Hero */}
       <main
-        className="flex-1 flex flex-col items-center justify-center relative px-6 py-10 text-center"
+        className="flex-1 flex flex-col items-center justify-center relative px-6 py-16 text-center"
         style={{
           background: `
             radial-gradient(ellipse 900px 500px at 50% 0%, rgba(255,43,61,0.10), transparent 60%),
@@ -97,11 +120,15 @@ export default function Landing() {
           transition={{ duration: 0.5, delay: 0.6 }}
           className="mt-11 flex gap-0 border border-[#26262a] rounded-md overflow-hidden"
         >
-          {STATS.map((s, i) => (
+          {[
+            { num: "4", lbl: "Mapas" },
+            { num: "1–20", lbl: "Jogadores" },
+            { num: "~5min", lbl: "Por partida" },
+          ].map((s, i) => (
             <div
               key={i}
               className={`py-3.5 px-6.5 text-left ${
-                i < STATS.length - 1 ? "border-r border-[#26262a]" : ""
+                i < 2 ? "border-r border-[#26262a]" : ""
               } max-sm:border-r-0 max-sm:border-b max-sm:last:border-b-0 max-sm:text-center max-sm:w-full`}
             >
               <span className="block font-anton text-2xl text-[#f4f2ee]">
@@ -114,7 +141,7 @@ export default function Landing() {
           ))}
         </motion.div>
 
-        {/* CTA button */}
+        {/* CTA */}
         <motion.button
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -126,12 +153,9 @@ export default function Landing() {
           style={{ animation: "pulse-glow 2.2s ease-in-out infinite" }}
         >
           Entrar no shopping
-          <span className="text-lg transition-transform duration-150 group-hover:translate-x-1">
-            →
-          </span>
+          <span className="text-lg">→</span>
         </motion.button>
 
-        {/* Sub note */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -141,6 +165,172 @@ export default function Landing() {
           Acesso antecipado — protótipo interno
         </motion.p>
       </main>
+
+      {/* Features section */}
+      <section className="px-6 py-16 bg-[#0b0b0d]">
+        <div className="max-w-5xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <span className="font-oswald text-xs tracking-[0.35em] text-[#ffcc00] uppercase">
+              Como funciona
+            </span>
+            <h2 className="font-anton text-4xl text-[#f4f2ee] uppercase mt-2">
+              Sobreviva. <span className="text-[#ff2b3d]">Domine.</span> Pontue.
+            </h2>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {FEATURES.map((feat, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-[#141416] border border-[#26262a] rounded-lg p-6 hover:border-[#ff2b3d]/30 transition-colors"
+              >
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center mb-4"
+                  style={{ backgroundColor: `${feat.color}15` }}
+                >
+                  <feat.icon className="size-5" style={{ color: feat.color }} />
+                </div>
+                <h3 className="font-oswald text-sm tracking-wider text-[#f4f2ee] uppercase mb-2">
+                  {feat.title}
+                </h3>
+                <p className="font-oswald text-xs text-[#7c7c82] leading-relaxed">
+                  {feat.desc}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Maps showcase */}
+      <section className="px-6 py-16 bg-[#0e0e10]">
+        <div className="max-w-5xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <span className="font-oswald text-xs tracking-[0.35em] text-[#ffcc00] uppercase">
+              Arenas
+            </span>
+            <h2 className="font-anton text-4xl text-[#f4f2ee] uppercase mt-2">
+              4 <span className="text-[#ff2b3d]">Shoppings</span> de Fortaleza
+            </h2>
+            <p className="font-oswald text-sm text-[#7c7c82] mt-2 max-w-md mx-auto">
+              Cada mapa é inspirado em um shopping real de Fortaleza, com layouts fiéis e nomes fictícios.
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            {ALL_MAPS.map((map, i) => (
+              <motion.div
+                key={map.id}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-[#141416] border border-[#26262a] rounded-lg overflow-hidden hover:border-[#ff2b3d]/30 transition-colors"
+              >
+                {/* Map preview */}
+                <div
+                  className="h-32 relative"
+                  style={{ backgroundColor: map.color }}
+                >
+                  <div className="absolute inset-0">
+                    {map.rooms.filter((r) => r.type !== "corridor").slice(0, 12).map((room, j) => (
+                      <div
+                        key={j}
+                        className="absolute"
+                        style={{
+                          left: `${(room.x / map.width) * 100}%`,
+                          top: `${(room.y / map.height) * 100}%`,
+                          width: `${(room.w / map.width) * 100}%`,
+                          height: `${(room.h / map.height) * 100}%`,
+                          backgroundColor: "rgba(255,255,255,0.08)",
+                          border: "1px solid rgba(255,255,255,0.05)",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div
+                    className="absolute border rounded-full"
+                    style={{
+                      width: `${(Math.min(map.width, map.height) * 0.45 / map.width) * 100}%`,
+                      height: `${(Math.min(map.width, map.height) * 0.45 / map.height) * 100}%`,
+                      left: "50%",
+                      top: "50%",
+                      transform: "translate(-50%, -50%)",
+                      borderColor: "rgba(255,43,61,0.3)",
+                      borderStyle: "dashed",
+                    }}
+                  />
+                  <div className="absolute bottom-2 left-3">
+                    <span
+                      className="font-oswald text-[10px] tracking-wider uppercase px-2 py-0.5 rounded"
+                      style={{
+                        backgroundColor: `${map.accentColor}20`,
+                        color: map.accentColor,
+                      }}
+                    >
+                      {map.rooms.length} salas
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MapPin className="size-3.5" style={{ color: map.accentColor }} />
+                    <h3 className="font-anton text-lg text-[#f4f2ee] uppercase">
+                      {map.name}
+                    </h3>
+                  </div>
+                  <p className="font-oswald text-[10px] tracking-wider text-[#52525a] uppercase mb-2">
+                    Baseado em: {map.realName}
+                  </p>
+                  <p className="font-oswald text-xs text-[#7c7c82] leading-relaxed">
+                    {map.description}
+                  </p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="px-6 py-20 text-center">
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+        >
+          <h2 className="font-anton text-5xl md:text-6xl text-[#f4f2ee] uppercase mb-4">
+            Pronto para{" "}
+            <span className="text-[#ff2b3d]">entrar?</span>
+          </h2>
+          <p className="font-oswald text-[#7c7c82] mb-8 max-w-md mx-auto">
+            Acesso antecipado. Jogue agora e ajude a moldar o jogo.
+          </p>
+          <button
+            onClick={() => navigate("/auth?returnTo=/dashboard")}
+            className="cta-pulse inline-flex items-center gap-3 py-4.5 px-11 bg-[#ff2b3d] text-white font-oswald text-[15px] font-semibold tracking-[0.14em] uppercase border-none rounded-[3px] cursor-pointer transition-all duration-150 hover:bg-[#ff1526] hover:-translate-y-0.5"
+            style={{ animation: "pulse-glow 2.2s ease-in-out infinite" }}
+          >
+            Entrar no shopping
+            <span className="text-lg">→</span>
+          </button>
+        </motion.div>
+      </section>
     </div>
   );
 }

@@ -1,24 +1,46 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Swords, Trophy, Clock, Users, Zap } from "lucide-react";
+import { ALL_MAPS } from "@/game/maps";
+import {
+  LogOut,
+  Swords,
+  Trophy,
+  Clock,
+  Zap,
+  MapPin,
+  ChevronRight,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 
-const LEADERBOARD = [
-  { rank: 1, name: "Shadow_X", kills: 12, score: 2840, win: true },
-  { rank: 2, name: "NightHawk", kills: 9, score: 2120, win: false },
-  { rank: 3, name: "Phantom_BR", kills: 8, score: 1890, win: false },
-  { rank: 4, name: "GhostRider", kills: 6, score: 1540, win: false },
-  { rank: 5, name: "CyberWolf", kills: 5, score: 1320, win: false },
+const BOT_OPTIONS = [
+  { label: "8 Bots", value: 8 },
+  { label: "12 Bots", value: 12 },
+  { label: "14 Bots", value: 14 },
+  { label: "19 Bots", value: 19 },
 ];
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [selectedMap, setSelectedMap] = useState<string>(ALL_MAPS[0].id);
+  const [botCount, setBotCount] = useState(14);
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
+  };
+
+  const startGame = (mapId: string) => {
+    navigate(`/game?map=${mapId}&bots=${botCount}`);
+  };
+
+  const roomColors: Record<string, string> = {
+    food_court: "#ffcc00",
+    store: "#3b82f6",
+    anchor: "#ff2b3d",
+    atrium: "#22c55e",
   };
 
   return (
@@ -40,7 +62,7 @@ export default function Dashboard() {
             </div>
             <div className="hidden sm:block h-6 w-px bg-[#26262a]" />
             <span className="hidden sm:block font-oswald text-xs tracking-[0.14em] text-[#7c7c82] uppercase">
-              LOBBY
+              Selecionar Mapa
             </span>
           </div>
 
@@ -65,7 +87,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Main content */}
+      {/* Main */}
       <main
         className="flex-1 px-6 py-8"
         style={{
@@ -76,28 +98,152 @@ export default function Dashboard() {
         }}
       >
         <div className="max-w-6xl mx-auto">
-          {/* Welcome section */}
-          <div className="mb-8">
+          {/* Welcome */}
+          <div className="mb-6">
             <h1 className="font-anton text-4xl md:text-5xl text-[#f4f2ee] uppercase tracking-tight">
-              Bem-vindo ao{" "}
-              <span className="text-[#ff2b3d]">Shopping</span>
+              Escolha seu{" "}
+              <span className="text-[#ff2b3d]">Setor</span>
             </h1>
             <p className="mt-2 font-oswald text-[#7c7c82] tracking-wide">
-              Prepare-se para a próxima partida. Os corredores estão esperando.
+              Selecione um mapa e entre na batalha. Cada shopping tem sua própria arena.
             </p>
           </div>
 
-          {/* Quick stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {/* Bot count selector */}
+          <div className="mb-6 flex items-center gap-3 flex-wrap">
+            <span className="font-oswald text-xs tracking-[0.14em] text-[#7c7c82] uppercase">
+              Oponentes:
+            </span>
+            {BOT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setBotCount(opt.value)}
+                className={`px-4 py-2 rounded font-oswald text-xs tracking-wider uppercase cursor-pointer transition-all ${
+                  botCount === opt.value
+                    ? "bg-[#ff2b3d] text-white"
+                    : "bg-[#1a1a1c] border border-[#26262a] text-[#7c7c82] hover:border-[#ff2b3d]/50 hover:text-[#f4f2ee]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Map grid */}
+          <div className="grid md:grid-cols-2 gap-6">
+            {ALL_MAPS.map((map) => {
+              const isSelected = selectedMap === map.id;
+              return (
+                <Card
+                  key={map.id}
+                  onClick={() => setSelectedMap(map.id)}
+                  className={`border cursor-pointer transition-all duration-200 ${
+                    isSelected
+                      ? "border-[#ff2b3d] bg-[#141416] shadow-[0_0_20px_rgba(255,43,61,0.15)]"
+                      : "border-[#26262a] bg-[#141416] hover:border-[#26262a]/80"
+                  }`}
+                >
+                  <CardContent className="p-6">
+                    {/* Map header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="font-anton text-2xl text-[#f4f2ee] uppercase">
+                          {map.name}
+                        </h3>
+                        <p className="font-oswald text-xs tracking-wider text-[#52525a] mt-0.5">
+                          {map.realName}
+                        </p>
+                      </div>
+                      {isSelected && (
+                        <div className="w-3 h-3 rounded-full bg-[#ff2b3d] animate-pulse" />
+                      )}
+                    </div>
+
+                    {/* Map preview — simplified top-down view */}
+                    <div
+                      className="w-full h-40 rounded border border-[#26262a] mb-4 overflow-hidden relative"
+                      style={{ backgroundColor: map.color }}
+                    >
+                      <MapPreview map={map} />
+                      {/* Zone indicator */}
+                      <div
+                        className="absolute border border-[#ff2b3d]/40 rounded-full"
+                        style={{
+                          width: `${(Math.min(map.width, map.height) * 0.45 / map.width) * 100}%`,
+                          height: `${(Math.min(map.width, map.height) * 0.45 / map.height) * 100}%`,
+                          left: "50%",
+                          top: "50%",
+                          transform: "translate(-50%, -50%)",
+                          borderStyle: "dashed",
+                        }}
+                      />
+                    </div>
+
+                    {/* Map info */}
+                    <p className="font-oswald text-xs text-[#7c7c82] mb-4 leading-relaxed">
+                      {map.description}
+                    </p>
+
+                    {/* Room types */}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {Array.from(new Set(map.rooms.map((r) => r.type)))
+                        .slice(0, 5)
+                        .map((type) => (
+                          <span
+                            key={type}
+                            className="px-2 py-0.5 rounded text-[10px] font-oswald tracking-wider uppercase"
+                            style={{
+                              backgroundColor: `${roomColors[type] || "#7c7c82"}15`,
+                              color: roomColors[type] || "#7c7c82",
+                            }}
+                          >
+                            {type.replace("_", " ")}
+                          </span>
+                        ))}
+                    </div>
+
+                    {/* Play button */}
+                    <Button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startGame(map.id);
+                      }}
+                      className={`w-full font-oswald text-sm tracking-wider uppercase cursor-pointer ${
+                        isSelected
+                          ? "bg-[#ff2b3d] hover:bg-[#ff1526] text-white"
+                          : "bg-[#1a1a1c] hover:bg-[#26262a] text-[#7c7c82] border border-[#26262a]"
+                      }`}
+                    >
+                      {isSelected ? (
+                        <>
+                          Entrar no {map.name}
+                          <ChevronRight className="ml-2 size-4" />
+                        </>
+                      ) : (
+                        <>
+                          <MapPin className="mr-2 size-4" />
+                          Selecionar
+                        </>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Quick stats footer */}
+          <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { icon: Swords, label: "Abates", value: "47", color: "#ff2b3d" },
+              { icon: Swords, label: "Abates Totais", value: "47", color: "#ff2b3d" },
               { icon: Trophy, label: "Vitórias", value: "8", color: "#ffcc00" },
-              { icon: Clock, label: "Tempo", value: "12h", color: "#7c7c82" },
-              { icon: Zap, label: "Score", value: "12,450", color: "#ff2b3d" },
+              { icon: Clock, label: "Tempo Jogado", value: "12h", color: "#7c7c82" },
+              { icon: Zap, label: "Score Total", value: "12,450", color: "#ff2b3d" },
             ].map((stat, i) => (
               <Card
                 key={i}
-                className="border-[#26262a] bg-[#141416] hover:border-[#ff2b3d]/30 transition-colors"
+                className="border-[#26262a] bg-[#141416]"
               >
                 <CardContent className="p-4 flex items-center gap-3">
                   <div
@@ -116,91 +262,57 @@ export default function Dashboard() {
               </Card>
             ))}
           </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Play button */}
-            <Card className="border-[#26262a] bg-[#141416] overflow-hidden">
-              <CardContent className="p-0">
-                <div
-                  className="p-8 text-center"
-                  style={{
-                    background: `
-                      radial-gradient(ellipse 400px 300px at 50% 50%, rgba(255,43,61,0.15), transparent 70%)
-                    `,
-                  }}
-                >
-                  <div className="font-oswald text-xs tracking-[0.35em] text-[#ffcc00] uppercase mb-4">
-                    Pronto para ação
-                  </div>
-                  <h2 className="font-anton text-3xl md:text-4xl text-[#f4f2ee] uppercase mb-2">
-                    JOGAR
-                  </h2>
-                  <p className="text-sm text-[#7c7c82] mb-6 max-w-xs mx-auto">
-                    matchmaking automático • 13 setores • modo solo ou squad
-                  </p>
-                  <Button
-                    type="button"
-                    className="bg-[#ff2b3d] hover:bg-[#ff1526] text-white font-oswald text-lg tracking-wider px-12 py-6 uppercase cursor-pointer"
-                  >
-                    Entrar na fila
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Leaderboard */}
-            <Card className="border-[#26262a] bg-[#141416]">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-oswald text-sm tracking-[0.14em] text-[#7c7c82] uppercase">
-                    Ranking Global
-                  </h3>
-                  <span className="font-oswald text-[10px] tracking-wider text-[#52525a] uppercase">
-                    Temporada 1
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  {LEADERBOARD.map((player) => (
-                    <div
-                      key={player.rank}
-                      className={`flex items-center gap-3 p-3 rounded-lg ${
-                        player.win
-                          ? "bg-[#ff2b3d]/10 border border-[#ff2b3d]/30"
-                          : "bg-[#0b0b0d]"
-                      }`}
-                    >
-                      <span
-                        className={`font-anton text-lg w-8 text-center ${
-                          player.rank <= 3 ? "text-[#ffcc00]" : "text-[#7c7c82]"
-                        }`}
-                      >
-                        {player.rank}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[#f4f2ee] truncate">
-                          {player.name}
-                        </p>
-                        <p className="text-xs text-[#7c7c82]">
-                          {player.kills} abates
-                        </p>
-                      </div>
-                      <span className="font-anton text-sm text-[#f4f2ee]">
-                        {player.score.toLocaleString()}
-                      </span>
-                      {player.win && (
-                        <span className="text-[10px] font-oswald tracking-wider text-[#ffcc00] uppercase">
-                          WIN
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+// ============================================================================
+// Simple map preview renderer
+// ============================================================================
+function MapPreview({ map }: { map: (typeof ALL_MAPS)[number] }) {
+  const scaleX = 100 / map.width;
+  const scaleY = 100 / map.height;
+
+  const roomTypeColors: Record<string, string> = {
+    food_court: "rgba(255,204,0,0.25)",
+    store: "rgba(59,130,246,0.2)",
+    anchor: "rgba(255,43,61,0.25)",
+    corridor: "rgba(255,255,255,0.05)",
+    atrium: "rgba(255,255,255,0.15)",
+    parking: "rgba(100,100,100,0.15)",
+    escalator: "rgba(100,200,255,0.2)",
+    restroom: "rgba(100,100,200,0.15)",
+    entrance: "rgba(200,255,200,0.2)",
+  };
+
+  return (
+    <div className="absolute inset-0">
+      {map.rooms.map((room, i) => (
+        <div
+          key={i}
+          className="absolute"
+          style={{
+            left: `${room.x * scaleX}%`,
+            top: `${room.y * scaleY}%`,
+            width: `${room.w * scaleX}%`,
+            height: `${room.h * scaleY}%`,
+            backgroundColor: roomTypeColors[room.type] || "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.06)",
+          }}
+        />
+      ))}
+      {map.spawns.slice(0, 20).map((spawn, i) => (
+        <div
+          key={`spawn-${i}`}
+          className="absolute w-1 h-1 rounded-full bg-[#22c55e]"
+          style={{
+            left: `${spawn.x * scaleX}%`,
+            top: `${spawn.y * scaleY}%`,
+          }}
+        />
+      ))}
     </div>
   );
 }
