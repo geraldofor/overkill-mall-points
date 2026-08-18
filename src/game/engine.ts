@@ -1,25 +1,55 @@
 // ============================================================================
-// OVERKILL MALL — Core Game Engine
-// Canvas-based 2D top-down battle royale
+// OVERKILL MALL — Core Game Engine v2
+// Canvas-based 2D top-down battle royale with Free Fire-inspired mechanics
 // ============================================================================
 
 import {
   GameState,
   GameConfig,
+  GameMap,
   Player,
   Bullet,
   Item,
+  GlooWall,
   Vec2,
-  Wall,
   KillFeedEntry,
   WeaponType,
+  Armor,
+  Helmet,
+  Particle,
+  MovementState,
+  ItemType,
 } from "./types";
+import { WEAPONS, calcDamage, calcSpread } from "./weapons";
 import { SCORE, getKillstreakLabel } from "./scoring";
+import { audio } from "./audio";
 
 let nextId = 0;
 function uid(): string {
   return `${Date.now()}_${nextId++}`;
 }
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const WALK_SPEED = 180;
+const SPRINT_SPEED = 270;
+const CROUCH_SPEED = 90;
+const EP_TO_HP_RATE = 1; // 1 EP per second → HP
+const EP_TICK_INTERVAL = 1; // convert EP every 1s
+const STEPS_INTERVAL_WALK = 0.4;
+const STEPS_INTERVAL_SPRINT = 0.25;
+const GLOO_WALL_MAX = 3;
+const GLOO_WALL_HP = 200;
+const GLOO_WALL_LIFETIME = 120;
+const GLOO_WALL_SIZE = 60;
+const MEDKIT_HEAL = 75;
+const MEDKIT_TIME = 5;
+const BANDAGE_HEAL = 25;
+const BANDAGE_TIME = 3;
+const SPEED_BOOST_DURATION = 10;
+const SPEED_BOOST_MULT = 1.2;
 
 // Bot names
 const BOT_NAMES = [
@@ -34,9 +64,12 @@ const PLAYER_COLORS = [
   "#ec4899", "#06b6d4", "#f97316", "#8b5cf6", "#14b8a6",
 ];
 
+const WEAPON_TYPES: WeaponType[] = ["pistol", "smg", "rifle", "shotgun", "sniper"];
+
 // ============================================================================
 // Engine class
 // ============================================================================
+
 export class GameEngine {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -56,10 +89,24 @@ export class GameEngine {
   private touchJoystick = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
   private touchShoot = { active: false, x: 0, y: 0 };
 
-  // Fire rate & reload control
-  private lastFireTime = 0;
-  private isReloading = false;
-  private reloadStartTime = 0;
+  // Fire rate & reload control (per player)
+  private lastFireTimes = new Map<string, number>();
+  private reloadState = new Map<string, { reloading: boolean; startTime: number }>();
+
+  // Medkit / bandage channeling
+  private healChannel = new Map<string, { type: "medkit" | "bandage"; startTime: number; duration: number; healAmount: number }>();
+
+  // Speed boost timer
+  private speedBoosts = new Map<string, number>(); // endTime
+
+  // Step sound timer
+  private stepTimers = new Map<string, number>();
+
+  // EP tick timer
+  private epTickTimer = 0;
+
+  // Audio init flag
+  private audioInited = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -67,17 +114,14 @@ export class GameEngine {
     this.setupInput();
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // Public API
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   start(config: GameConfig, playerName: string): GameState {
     this.config = config;
     this.state = this.createInitialState(config, playerName);
-    this.humanId = this.state.players
-      .entries()
-      .next()
-      .value![0];
+    this.humanId = this.state.players.entries().next().value![0];
     this.running = true;
     this.lastTime = performance.now();
     this.loop();
@@ -101,9 +145,9 @@ export class GameEngine {
     this._onGameOver = fn;
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // State creation
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private createInitialState(config: GameConfig, playerName: string): GameState {
     const players = new Map<string, Player>();
@@ -112,33 +156,14 @@ export class GameEngine {
 
     // Human player
     const humanSpawn = allSpawns[0] || { x: map.width / 2, y: map.height / 2 };
-    const human: Player = {
+    const human: Player = this.createPlayer({
       id: uid(),
       name: playerName,
       isBot: false,
-      pos: { x: humanSpawn.x, y: humanSpawn.y },
-      vel: { x: 0, y: 0 },
-      radius: 14,
-      health: 100,
-      maxHealth: 100,
-      alive: true,
-      facing: 0,
+      spawn: humanSpawn,
       color: PLAYER_COLORS[0],
-      score: 0,
-      kills: 0,
-      headshots: 0,
-      damageDealt: 0,
-      assists: [],
-      survivalTime: 0,
-      itemsCollected: 0,
-      killstreak: 0,
-      killstreakMax: 0,
-      lastKillTime: 0,
-      ammo: 60,
-      maxAmmo: 60,
-      weapon: "rifle" as WeaponType,
-      invulnerableUntil: 0,
-    };
+      weapon: "rifle",
+    });
     players.set(human.id, human);
 
     // Bots
@@ -148,47 +173,28 @@ export class GameEngine {
         x: Math.random() * map.width,
         y: Math.random() * map.height,
       };
-      const bot: Player = {
+      const botWeapon = WEAPON_TYPES[Math.floor(Math.random() * WEAPON_TYPES.length)];
+      const bot: Player = this.createPlayer({
         id: uid(),
         name: botNames[i % botNames.length],
         isBot: true,
-        pos: { x: spawn.x, y: spawn.y },
-        vel: { x: 0, y: 0 },
-        radius: 14,
-        health: 100,
-        maxHealth: 100,
-        alive: true,
-        facing: Math.random() * Math.PI * 2,
+        spawn,
         color: PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length],
-        score: 0,
-        kills: 0,
-        headshots: 0,
-        damageDealt: 0,
-        assists: [],
-        survivalTime: 0,
-        itemsCollected: 0,
-        killstreak: 0,
-        killstreakMax: 0,
-        lastKillTime: 0,
-        ammo: 60,
-        maxAmmo: 60,
-        weapon: (["pistol", "rifle", "shotgun"] as WeaponType[])[
-          Math.floor(Math.random() * 3)
-        ],
-        invulnerableUntil: 0,
-      };
+        weapon: botWeapon,
+      });
+      // Give bots random armor/helmet
+      const armorLvl = Math.random() < 0.3 ? (Math.floor(Math.random() * 3) + 1) as 1 | 2 | 3 : 0;
+      const helmetLvl = Math.random() < 0.25 ? (Math.floor(Math.random() * 3) + 1) as 1 | 2 | 3 : 0;
+      bot.armor = this.createArmor(armorLvl);
+      bot.helmet = this.createHelmet(helmetLvl);
       players.set(bot.id, bot);
     }
 
-    // Items
-    const items: Item[] = map.itemSpawns.map((pos) => ({
-      id: uid(),
-      type: (["health", "ammo", "speed", "shield"] as const)[
-        Math.floor(Math.random() * 4)
-      ],
-      pos: { ...pos },
-      collected: false,
-    }));
+    // Items — more varied distribution
+    const items: Item[] = this.generateItems(map);
+
+    // Gloo walls
+    const glooWalls: GlooWall[] = [];
 
     // Zone
     const zoneRadius = Math.min(map.width, map.height) * 0.45;
@@ -200,13 +206,14 @@ export class GameEngine {
       shrinkSpeed: 0,
       damage: 2,
       phase: 0,
-      nextShrinkTime: 15, // first shrink after 15 seconds
+      nextShrinkTime: 20,
     };
 
     return {
       players,
       bullets: [],
       items,
+      glooWalls,
       map,
       zone,
       killFeed: [],
@@ -218,12 +225,127 @@ export class GameEngine {
       winnerId: null,
       started: false,
       countdown: 3,
+      particles: [],
     };
   }
 
-  // ------------------------------------------------------------------
+  private createPlayer(opts: {
+    id: string;
+    name: string;
+    isBot: boolean;
+    spawn: Vec2;
+    color: string;
+    weapon: WeaponType;
+  }): Player {
+    const weaponDef = WEAPONS[opts.weapon];
+    return {
+      id: opts.id,
+      name: opts.name,
+      isBot: opts.isBot,
+      pos: { ...opts.spawn },
+      vel: { x: 0, y: 0 },
+      radius: 13,
+      health: 100,
+      maxHealth: 100,
+      ep: 0,
+      maxEp: 100,
+      alive: true,
+      facing: 0,
+      color: opts.color,
+      weapon: opts.weapon,
+      armor: this.createArmor(0),
+      helmet: this.createHelmet(0),
+      glooWalls: opts.isBot ? 0 : 2,
+      maxGlooWalls: GLOO_WALL_MAX,
+      movementState: "walk",
+      sprintSpeed: SPRINT_SPEED,
+      walkSpeed: WALK_SPEED,
+      crouchSpeed: CROUCH_SPEED,
+      isCrouching: false,
+      isSprinting: false,
+      ammo: weaponDef.magSize,
+      maxAmmo: weaponDef.magSize,
+      reserveAmmo: weaponDef.magSize * 3,
+      score: 0,
+      kills: 0,
+      headshots: 0,
+      damageDealt: 0,
+      assists: [],
+      survivalTime: 0,
+      itemsCollected: 0,
+      killstreak: 0,
+      killstreakMax: 0,
+      lastKillTime: 0,
+      invulnerableUntil: 0,
+      lastDamageTime: 0,
+      placement: 0,
+      accuracyBonus: 1,
+    };
+  }
+
+  private createArmor(level: 0 | 1 | 2 | 3 | 4): Armor {
+    const durabilities: Record<number, number> = { 0: 0, 1: 50, 2: 75, 3: 100, 4: 100 };
+    const d = durabilities[level];
+    return { level, durability: d, maxDurability: d };
+  }
+
+  private createHelmet(level: 0 | 1 | 2 | 3 | 4): Helmet {
+    const durabilities: Record<number, number> = { 0: 0, 1: 30, 2: 50, 3: 75, 4: 100 };
+    const d = durabilities[level];
+    return { level, durability: d, maxDurability: d };
+  }
+
+  private generateItems(map: GameMap): Item[] {
+    const items: Item[] = [];
+    const types: ItemType[] = [
+      "health", "health", "health",
+      "ammo", "ammo", "ammo", "ammo",
+      "ep_boost", "ep_boost",
+      "gloo_wall", "gloo_wall",
+      "vest_1", "vest_1", "vest_2",
+      "helmet_1", "helmet_1", "helmet_2",
+      "bandage", "bandage",
+      "medkit",
+      "speed_boost",
+    ];
+
+    for (const spawn of map.itemSpawns) {
+      const type = types[Math.floor(Math.random() * types.length)];
+      items.push({
+        id: uid(),
+        type,
+        pos: {
+          x: spawn.x + (Math.random() - 0.5) * 30,
+          y: spawn.y + (Math.random() - 0.5) * 30,
+        },
+        collected: false,
+      });
+    }
+
+    // Add extra items in atrium/food court areas
+    for (const room of map.rooms) {
+      if (room.type === "atrium" || room.type === "food_court") {
+        for (let i = 0; i < 2; i++) {
+          const type = types[Math.floor(Math.random() * types.length)];
+          items.push({
+            id: uid(),
+            type,
+            pos: {
+              x: room.x + 40 + Math.random() * (room.w - 80),
+              y: room.y + 40 + Math.random() * (room.h - 80),
+            },
+            collected: false,
+          });
+        }
+      }
+    }
+
+    return items;
+  }
+
+  // ==================================================================
   // Input setup
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private setupInput(): void {
     const onKey = (e: KeyboardEvent, down: boolean) => {
@@ -241,12 +363,13 @@ export class GameEngine {
 
     this.canvas.addEventListener("mousedown", (e) => {
       if (e.button === 0) this.mouse.down = true;
+      if (!this.audioInited) { audio.init(); this.audioInited = true; }
     });
     this.canvas.addEventListener("mouseup", (e) => {
       if (e.button === 0) this.mouse.down = false;
     });
 
-    // Touch controls
+    // Touch
     this.canvas.addEventListener("touchstart", (e) => this.handleTouchStart(e), { passive: false });
     this.canvas.addEventListener("touchmove", (e) => this.handleTouchMove(e), { passive: false });
     this.canvas.addEventListener("touchend", (e) => this.handleTouchEnd(e), { passive: false });
@@ -254,16 +377,14 @@ export class GameEngine {
 
   private handleTouchStart(e: TouchEvent): void {
     e.preventDefault();
+    if (!this.audioInited) { audio.init(); this.audioInited = true; }
     for (const touch of Array.from(e.changedTouches)) {
       const rect = this.canvas.getBoundingClientRect();
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
-
       if (x < this.canvas.width / 2) {
-        // Left side — movement joystick
         this.touchJoystick = { active: true, startX: x, startY: y, x, y };
       } else {
-        // Right side — shoot direction
         this.touchShoot = { active: true, x: touch.clientX, y: touch.clientY };
         this.mouse.down = true;
       }
@@ -278,7 +399,7 @@ export class GameEngine {
         const dx = touch.clientX - rect.left - this.touchJoystick.startX;
         const dy = touch.clientY - rect.top - this.touchJoystick.startY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const maxDist = 40;
+        const maxDist = 45;
         if (dist > maxDist) {
           this.touchJoystick.x = this.touchJoystick.startX + (dx / dist) * maxDist;
           this.touchJoystick.y = this.touchJoystick.startY + (dy / dist) * maxDist;
@@ -308,25 +429,23 @@ export class GameEngine {
     }
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // Game loop
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private loop = (): void => {
     if (!this.running) return;
-
     const now = performance.now();
-    const dt = Math.min((now - this.lastTime) / 1000, 0.05); // cap at 50ms
+    const dt = Math.min((now - this.lastTime) / 1000, 0.05);
     this.lastTime = now;
-
     this.update(dt);
     this.render();
     this.animFrame = requestAnimationFrame(this.loop);
   };
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // Update
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private update(dt: number): void {
     const s = this.state;
@@ -335,19 +454,53 @@ export class GameEngine {
     // Countdown
     if (!s.started) {
       s.countdown -= dt;
-      if (s.countdown <= 0) {
-        s.started = true;
-      }
+      if (s.countdown <= 0) s.started = true;
       return;
     }
 
     s.matchTime += dt;
 
-    // Zone update
+    // Update audio listener position
+    const human = s.players.get(this.humanId);
+    if (human) audio.setListenerPos(human.pos);
+
+    // Zone
     this.updateZone(dt);
 
+    // EP → HP conversion
+    this.epTickTimer += dt;
+    if (this.epTickTimer >= EP_TICK_INTERVAL) {
+      this.epTickTimer = 0;
+      for (const [, p] of s.players) {
+        if (!p.alive) continue;
+        if (p.ep > 0) {
+          const epToConvert = Math.min(p.ep, EP_TO_HP_RATE * EP_TICK_INTERVAL);
+          p.ep -= epToConvert;
+          p.health = Math.min(p.maxHealth, p.health + epToConvert);
+        }
+      }
+    }
+
+    // Medkit / bandage channeling
+    for (const [pid, ch] of this.healChannel) {
+      const player = s.players.get(pid);
+      if (!player || !player.alive) { this.healChannel.delete(pid); continue; }
+      const elapsed = (s.matchTime - ch.startTime); // use matchTime as proxy
+      if (elapsed >= ch.duration) {
+        player.health = Math.min(player.maxHealth, player.health + ch.healAmount);
+        this.healChannel.delete(pid);
+        audio.play({ type: "heal", x: player.pos.x, y: player.pos.y });
+        this.spawnParticles(player.pos.x, player.pos.y, "#22c55e", 8, "heal");
+      }
+    }
+
+    // Speed boost expiry
+    const now = performance.now();
+    for (const [pid, endTime] of this.speedBoosts) {
+      if (now > endTime) this.speedBoosts.delete(pid);
+    }
+
     // Player input & movement
-    const human = s.players.get(this.humanId);
     if (human && human.alive) {
       this.handlePlayerInput(human, dt);
     }
@@ -364,69 +517,71 @@ export class GameEngine {
       if (!player.alive) continue;
       this.moveEntity(player, dt);
       player.survivalTime += dt;
+
+      // Footstep sounds
+      this.handleFootsteps(player, dt);
     }
 
     // Bullets
     this.updateBullets(dt);
 
+    // Gloo walls decay
+    this.updateGlooWalls(dt);
+
     // Zone damage
     this.applyZoneDamage(dt);
 
-    // Check alive count
+    // Particles
+    this.updateParticles(dt);
+
+    // Alive count & game over
     let alive = 0;
     let lastAlive: Player | null = null;
     for (const [, p] of s.players) {
-      if (p.alive) {
-        alive++;
-        lastAlive = p;
-      }
+      if (p.alive) { alive++; lastAlive = p; }
     }
     s.aliveCount = alive;
 
-    // Game over check
     if (alive <= 1) {
       s.gameOver = true;
       s.winnerId = lastAlive?.id || null;
-      // Assign placements
-      let placement = s.totalPlayers;
-      for (const [, p] of s.players) {
-        if (!p.alive && p.survivalTime > 0) {
-          // Already dead — placement was set at death
-        }
-      }
       if (lastAlive) {
-        lastAlive.score += this.getPlacementScore(1);
+        lastAlive.score += SCORE.PLACEMENT_WIN;
+        lastAlive.placement = 1;
+      }
+      // Assign placements to dead players
+      let deadPlacement = s.totalPlayers;
+      const dead = Array.from(s.players.values()).filter(p => !p.alive).sort((a, b) => b.survivalTime - a.survivalTime);
+      for (const p of dead) {
+        if (p.placement === 0) {
+          p.placement = deadPlacement;
+          deadPlacement--;
+        }
       }
       this._onGameOver?.(s);
     }
 
-    // Match time limit
     if (s.matchTime >= s.matchDuration) {
       s.gameOver = true;
-      // Winner = last alive or highest HP
       let best: Player | null = null;
       for (const [, p] of s.players) {
-        if (p.alive && (!best || p.health > best.health)) {
-          best = p;
-        }
+        if (p.alive && (!best || p.health > best.health)) best = p;
       }
       s.winnerId = best?.id || null;
       this._onGameOver?.(s);
     }
 
-    // Callback
     this._onUpdate?.(s);
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // Player input
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private handlePlayerInput(player: Player, dt: number): void {
     let dx = 0;
     let dy = 0;
 
-    // Keyboard
     if (this.keys.has("w") || this.keys.has("arrowup")) dy -= 1;
     if (this.keys.has("s") || this.keys.has("arrowdown")) dy += 1;
     if (this.keys.has("a") || this.keys.has("arrowleft")) dx -= 1;
@@ -437,26 +592,35 @@ export class GameEngine {
       const jdx = this.touchJoystick.x - this.touchJoystick.startX;
       const jdy = this.touchJoystick.y - this.touchJoystick.startY;
       const dist = Math.sqrt(jdx * jdx + jdy * jdy);
-      if (dist > 5) {
-        dx = jdx / dist;
-        dy = jdy / dist;
-      }
+      if (dist > 5) { dx = jdx / dist; dy = jdy / dist; }
     }
 
-    // Normalize
     const len = Math.sqrt(dx * dx + dy * dy);
-    if (len > 0) {
-      dx /= len;
-      dy /= len;
+    if (len > 0) { dx /= len; dy /= len; }
+
+    // Crouch (Ctrl or C)
+    player.isCrouching = this.keys.has("control") || this.keys.has("c");
+    // Sprint (Shift)
+    player.isSprinting = this.keys.has("shift") && !player.isCrouching && len > 0;
+
+    // Cancel heal channel if moving
+    if (len > 0 && this.healChannel.has(player.id)) {
+      this.healChannel.delete(player.id);
     }
 
-    const speed = 200; // pixels per second
+    // Speed
+    let speed = player.walkSpeed;
+    if (player.isSprinting) speed = player.sprintSpeed;
+    if (player.isCrouching) speed = player.crouchSpeed;
+
+    // Speed boost
+    if (this.speedBoosts.has(player.id)) speed *= SPEED_BOOST_MULT;
+
     player.vel.x = dx * speed;
     player.vel.y = dy * speed;
 
-    // Facing direction — toward mouse or touch
-    let targetX: number;
-    let targetY: number;
+    // Facing direction
+    let targetX: number, targetY: number;
     if (this.touchShoot.active) {
       const rect = this.canvas.getBoundingClientRect();
       targetX = this.touchShoot.x - rect.left + this.camera.x;
@@ -465,227 +629,379 @@ export class GameEngine {
       targetX = this.mouse.x;
       targetY = this.mouse.y;
     }
-    player.facing = Math.atan2(
-      targetY - player.pos.y,
-      targetX - player.pos.x,
-    );
+    player.facing = Math.atan2(targetY - player.pos.y, targetX - player.pos.x);
 
     // Shooting
     if (this.mouse.down || this.touchShoot.active) {
       const now = performance.now();
-      const fireRate = player.weapon === "shotgun" ? 900 : player.weapon === "rifle" ? 200 : 350;
-      if (now - this.lastFireTime > fireRate && player.ammo > 0 && !this.isReloading) {
+      const weaponDef = WEAPONS[player.weapon];
+      const lastFire = this.lastFireTimes.get(player.id) || 0;
+      const rs = this.reloadState.get(player.id);
+
+      if (now - lastFire > weaponDef.fireRate && player.ammo > 0 && !rs?.reloading) {
         this.fireBullet(player);
-        this.lastFireTime = now;
+        this.lastFireTimes.set(player.id, now);
       }
     }
 
-    // Reload (press R — takes 2 seconds)
-    if (this.keys.has("r") && player.ammo < player.maxAmmo && !this.isReloading) {
-      this.isReloading = true;
-      this.reloadStartTime = performance.now();
-    }
-    if (this.isReloading) {
-      const elapsed = performance.now() - this.reloadStartTime;
-      if (elapsed >= 2000) {
-        player.ammo = player.maxAmmo;
-        this.isReloading = false;
+    // Reload (R)
+    if (this.keys.has("r")) {
+      const rs = this.reloadState.get(player.id);
+      if (!rs?.reloading && player.ammo < player.maxAmmo && player.reserveAmmo > 0) {
+        this.reloadState.set(player.id, { reloading: true, startTime: performance.now() });
+        audio.play({ type: "reload", x: player.pos.x, y: player.pos.y });
       }
+    }
+
+    // Check reload completion
+    const rs = this.reloadState.get(player.id);
+    if (rs?.reloading) {
+      const elapsed = performance.now() - rs.startTime;
+      const weaponDef = WEAPONS[player.weapon];
+      if (elapsed >= weaponDef.reloadTime) {
+        const needed = player.maxAmmo - player.ammo;
+        const available = Math.min(needed, player.reserveAmmo);
+        player.ammo += available;
+        player.reserveAmmo -= available;
+        this.reloadState.set(player.id, { reloading: false, startTime: 0 });
+      }
+    }
+
+    // Gloo wall deploy (G key or Q)
+    if (this.keys.has("g") || this.keys.has("q")) {
+      this.keys.delete("g");
+      this.keys.delete("q");
+      this.deployGlooWall(player);
+    }
+
+    // Use medkit (5) or bandage (4)
+    if (this.keys.has("5") && !this.healChannel.has(player.id)) {
+      this.keys.delete("5");
+      this.startHealChannel(player, "medkit");
+    }
+    if (this.keys.has("4") && !this.healChannel.has(player.id)) {
+      this.keys.delete("4");
+      this.startHealChannel(player, "bandage");
     }
   }
 
-  // ------------------------------------------------------------------
-  // Bot AI
-  // ------------------------------------------------------------------
+  // ==================================================================
+  // Bot AI (improved)
+  // ==================================================================
 
   private updateBot(bot: Player, dt: number): void {
     const s = this.state;
 
-    // Find nearest alive enemy
     let nearest: Player | null = null;
     let nearDist = Infinity;
     for (const [, p] of s.players) {
       if (p.id === bot.id || !p.alive) continue;
       const d = this.dist(bot.pos, p.pos);
-      if (d < nearDist) {
-        nearDist = d;
-        nearest = p;
+      if (d < nearDist) { nearDist = d; nearest = p; }
+    }
+
+    const aggroRange = 450;
+    const fleeRange = 90;
+
+    // Reload if empty
+    const rs = this.reloadState.get(bot.id);
+    if (bot.ammo <= 0 && !rs?.reloading) {
+      if (bot.reserveAmmo > 0) {
+        this.reloadState.set(bot.id, { reloading: true, startTime: performance.now() });
+      } else {
+        bot.ammo = bot.maxAmmo; // infinite bot ammo fallback
       }
     }
 
-    const aggroRange = 400;
-    const fleeRange = 80;
-
     if (nearest && nearDist < aggroRange) {
-      // Move toward enemy
-      const angle = Math.atan2(
-        nearest.pos.y - bot.pos.y,
-        nearest.pos.x - bot.pos.x,
-      );
+      const angle = Math.atan2(nearest.pos.y - bot.pos.y, nearest.pos.x - bot.pos.x);
 
-      if (nearDist < fleeRange && bot.health < 30) {
-        // Flee when low HP and close
-        bot.vel.x = -Math.cos(angle) * 160;
-        bot.vel.y = -Math.sin(angle) * 160;
+      if (nearDist < fleeRange && bot.health < 35) {
+        bot.vel.x = -Math.cos(angle) * 170;
+        bot.vel.y = -Math.sin(angle) * 170;
+        bot.isSprinting = true;
+        bot.isCrouching = false;
       } else {
-        // Approach and strafe
-        const strafeAngle = angle + Math.sin(s.matchTime * 2 + bot.pos.x) * 0.5;
-        bot.vel.x = Math.cos(strafeAngle) * 140;
-        bot.vel.y = Math.sin(strafeAngle) * 140;
+        const strafeAngle = angle + Math.sin(s.matchTime * 2.5 + bot.pos.x * 0.01) * 0.6;
+        const moveSpeed = nearDist < 200 ? 130 : 160;
+        bot.vel.x = Math.cos(strafeAngle) * moveSpeed;
+        bot.vel.y = Math.sin(strafeAngle) * moveSpeed;
+        bot.isSprinting = nearDist > 200;
+        bot.isCrouching = nearDist < 150 && bot.health > 50;
       }
 
       bot.facing = angle;
 
-      // Shoot if in range
-      if (nearDist < aggroRange * 0.8 && bot.ammo > 0) {
+      // Shoot
+      if (nearDist < aggroRange * 0.85 && bot.ammo > 0 && !rs?.reloading) {
         const now = performance.now();
-        const fireRate = bot.weapon === "shotgun" ? 800 : bot.weapon === "rifle" ? 200 : 400;
-        // Bots fire at ~60% accuracy
-        if (
-          now - (bot as any)._lastFire > fireRate &&
-          Math.random() < 0.6
-        ) {
+        const weaponDef = WEAPONS[bot.weapon];
+        const lastFire = this.lastFireTimes.get(bot.id) || 0;
+        const accuracy = bot.isCrouching ? 0.7 : 0.55;
+        if (now - lastFire > weaponDef.fireRate && Math.random() < accuracy) {
           this.fireBullet(bot);
-          (bot as any)._lastFire = now;
+          this.lastFireTimes.set(bot.id, now);
         }
       }
+
+      // Smart gloo wall usage
+      if (nearDist < 180 && bot.glooWalls > 0 && bot.health < 50 && Math.random() < 0.02) {
+        this.deployGlooWall(bot);
+      }
     } else {
-      // Wander toward zone center
+      // Wander toward zone
       const toZoneX = s.zone.centerX - bot.pos.x;
       const toZoneY = s.zone.centerY - bot.pos.y;
       const toZoneDist = Math.sqrt(toZoneX * toZoneX + toZoneY * toZoneY);
 
       if (toZoneDist > s.zone.radius * 0.5) {
-        // Move toward zone
-        bot.vel.x = (toZoneX / toZoneDist) * 100;
-        bot.vel.y = (toZoneY / toZoneDist) * 100;
+        bot.vel.x = (toZoneX / toZoneDist) * 110;
+        bot.vel.y = (toZoneY / toZoneDist) * 110;
         bot.facing = Math.atan2(toZoneY, toZoneX);
       } else {
-        // Random wander
-        if (Math.random() < 0.02) {
-          const angle = Math.random() * Math.PI * 2;
-          bot.vel.x = Math.cos(angle) * 80;
-          bot.vel.y = Math.sin(angle) * 80;
-          bot.facing = angle;
+        if (Math.random() < 0.015) {
+          const a = Math.random() * Math.PI * 2;
+          bot.vel.x = Math.cos(a) * 80;
+          bot.vel.y = Math.sin(a) * 80;
+          bot.facing = a;
         }
       }
-    }
-
-    // Reload
-    if (bot.ammo <= 0) {
-      bot.ammo = bot.maxAmmo;
+      bot.isSprinting = false;
+      bot.isCrouching = false;
     }
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // Movement & collision
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private moveEntity(entity: Player, dt: number): void {
     const newX = entity.pos.x + entity.vel.x * dt;
     const newY = entity.pos.y + entity.vel.y * dt;
 
-    // Check wall collisions
-    const testRect = {
-      x: newX - entity.radius,
-      y: newY - entity.radius,
-      w: entity.radius * 2,
-      h: entity.radius * 2,
-    };
+    const r = entity.radius;
+    const testRect = { x: newX - r, y: newY - r, w: r * 2, h: r * 2 };
 
     let canMoveX = true;
     let canMoveY = true;
 
+    // Check wall collisions
     for (const wall of this.state.map.walls) {
       if (this.rectsOverlap(testRect, wall)) {
-        // Check if X movement causes collision
-        const xRect = {
-          x: newX - entity.radius,
-          y: entity.pos.y - entity.radius,
-          w: entity.radius * 2,
-          h: entity.radius * 2,
-        };
+        const xRect = { x: newX - r, y: entity.pos.y - r, w: r * 2, h: r * 2 };
         if (this.rectsOverlap(xRect, wall)) canMoveX = false;
-
-        // Check if Y movement causes collision
-        const yRect = {
-          x: entity.pos.x - entity.radius,
-          y: newY - entity.radius,
-          w: entity.radius * 2,
-          h: entity.radius * 2,
-        };
+        const yRect = { x: entity.pos.x - r, y: newY - r, w: r * 2, h: r * 2 };
         if (this.rectsOverlap(yRect, wall)) canMoveY = false;
       }
     }
 
-    // Apply movement
+    // Check gloo wall collisions
+    for (const gw of this.state.glooWalls) {
+      const gwRect = { x: gw.pos.x - gw.width / 2, y: gw.pos.y - gw.height / 2, w: gw.width, h: gw.height };
+      if (this.rectsOverlap(testRect, gwRect)) {
+        const xRect = { x: newX - r, y: entity.pos.y - r, w: r * 2, h: r * 2 };
+        if (this.rectsOverlap(xRect, gwRect)) canMoveX = false;
+        const yRect = { x: entity.pos.x - r, y: newY - r, w: r * 2, h: r * 2 };
+        if (this.rectsOverlap(yRect, gwRect)) canMoveY = false;
+      }
+    }
+
     if (canMoveX) entity.pos.x = newX;
     if (canMoveY) entity.pos.y = newY;
 
-    // Clamp to map bounds
-    entity.pos.x = Math.max(
-      entity.radius,
-      Math.min(this.state.map.width - entity.radius, entity.pos.x),
-    );
-    entity.pos.y = Math.max(
-      entity.radius,
-      Math.min(this.state.map.height - entity.radius, entity.pos.y),
-    );
+    entity.pos.x = Math.max(r, Math.min(this.state.map.width - r, entity.pos.x));
+    entity.pos.y = Math.max(r, Math.min(this.state.map.height - r, entity.pos.y));
 
-    // Check item pickups
+    // Item pickups
     for (const item of this.state.items) {
       if (item.collected) continue;
-      if (this.dist(entity.pos, item.pos) < entity.radius + 12) {
-        item.collected = true;
-        entity.itemsCollected++;
-        entity.score += SCORE.ITEM_COLLECT;
-
-        switch (item.type) {
-          case "health":
-            entity.health = Math.min(entity.maxHealth, entity.health + 30);
-            break;
-          case "ammo":
-            entity.ammo = Math.min(entity.maxAmmo, entity.ammo + 20);
-            break;
-          case "speed":
-            // Temporary speed boost — we'll just add score
-            entity.score += 10;
-            break;
-          case "shield":
-            entity.health = Math.min(entity.maxHealth + 25, entity.health + 25);
-            break;
-        }
+      if (this.dist(entity.pos, item.pos) < entity.radius + 14) {
+        this.collectItem(entity, item);
       }
     }
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
+  // Item collection
+  // ==================================================================
+
+  private collectItem(player: Player, item: Item): void {
+    item.collected = true;
+    player.itemsCollected++;
+    player.score += SCORE.ITEM_COLLECT;
+    audio.play({ type: "pickup", x: player.pos.x, y: player.pos.y });
+    this.spawnParticles(item.pos.x, item.pos.y, this.getItemColor(item.type), 5, "spark");
+
+    switch (item.type) {
+      case "health":
+        player.health = Math.min(player.maxHealth, player.health + 30);
+        break;
+      case "medkit":
+        this.startHealChannel(player, "medkit");
+        break;
+      case "bandage":
+        this.startHealChannel(player, "bandage");
+        break;
+      case "ep_boost":
+        player.ep = Math.min(player.maxEp, player.ep + 50);
+        break;
+      case "ammo":
+        player.reserveAmmo += 30;
+        break;
+      case "gloo_wall":
+        player.glooWalls = Math.min(player.maxGlooWalls, player.glooWalls + 1);
+        break;
+      case "vest_1":
+        if (player.armor.level < 1) player.armor = this.createArmor(1);
+        else { player.armor.durability = Math.min(player.armor.maxDurability, player.armor.durability + 25); }
+        break;
+      case "vest_2":
+        if (player.armor.level < 2) player.armor = this.createArmor(2);
+        else { player.armor.durability = Math.min(player.armor.maxDurability, player.armor.durability + 25); }
+        break;
+      case "vest_3":
+        if (player.armor.level < 3) player.armor = this.createArmor(3);
+        else { player.armor.durability = Math.min(player.armor.maxDurability, player.armor.durability + 25); }
+        break;
+      case "vest_4":
+        player.armor = this.createArmor(4);
+        break;
+      case "helmet_1":
+        if (player.helmet.level < 1) player.helmet = this.createHelmet(1);
+        else { player.helmet.durability = Math.min(player.helmet.maxDurability, player.helmet.durability + 15); }
+        break;
+      case "helmet_2":
+        if (player.helmet.level < 2) player.helmet = this.createHelmet(2);
+        else { player.helmet.durability = Math.min(player.helmet.maxDurability, player.helmet.durability + 15); }
+        break;
+      case "helmet_3":
+        if (player.helmet.level < 3) player.helmet = this.createHelmet(3);
+        else { player.helmet.durability = Math.min(player.helmet.maxDurability, player.helmet.durability + 15); }
+        break;
+      case "helmet_4":
+        player.helmet = this.createHelmet(4);
+        break;
+      case "speed_boost":
+        this.speedBoosts.set(player.id, performance.now() + SPEED_BOOST_DURATION * 1000);
+        break;
+    }
+  }
+
+  private startHealChannel(player: Player, type: "medkit" | "bandage"): void {
+    if (player.health >= player.maxHealth) return;
+    // Cancel existing channel
+    this.healChannel.delete(player.id);
+    const dur = type === "medkit" ? MEDKIT_TIME : BANDAGE_TIME;
+    const heal = type === "medkit" ? MEDKIT_HEAL : BANDAGE_HEAL;
+    this.healChannel.set(player.id, {
+      type,
+      startTime: this.state.matchTime,
+      duration: dur,
+      healAmount: Math.min(heal, player.maxHealth - player.health),
+    });
+  }
+
+  // ==================================================================
+  // Gloo walls
+  // ==================================================================
+
+  private deployGlooWall(player: Player): void {
+    if (player.glooWalls <= 0) return;
+
+    // Place wall in front of the player
+    const dist = 45;
+    const wx = player.pos.x + Math.cos(player.facing) * dist;
+    const wy = player.pos.y + Math.sin(player.facing) * dist;
+
+    // Check no overlap with existing walls
+    const testRect = { x: wx - GLOO_WALL_SIZE / 2, y: wy - GLOO_WALL_SIZE / 2, w: GLOO_WALL_SIZE, h: GLOO_WALL_SIZE };
+    for (const wall of this.state.map.walls) {
+      if (this.rectsOverlap(testRect, wall)) return;
+    }
+
+    player.glooWalls--;
+    this.state.glooWalls.push({
+      id: uid(),
+      ownerId: player.id,
+      pos: { x: wx, y: wy },
+      rotation: player.facing,
+      width: GLOO_WALL_SIZE,
+      height: 8,
+      health: GLOO_WALL_HP,
+      maxHealth: GLOO_WALL_HP,
+      lifetime: GLOO_WALL_LIFETIME,
+    });
+
+    audio.play({ type: "gloo_place", x: wx, y: wy });
+    this.spawnParticles(wx, wy, "#00e5ff", 10, "spark");
+  }
+
+  private updateGlooWalls(dt: number): void {
+    this.state.glooWalls = this.state.glooWalls.filter(gw => {
+      gw.lifetime -= dt;
+      return gw.lifetime > 0 && gw.health > 0;
+    });
+  }
+
+  // ==================================================================
+  // Footsteps
+  // ==================================================================
+
+  private handleFootsteps(player: Player, dt: number): void {
+    const vx = player.vel.x;
+    const vy = player.vel.y;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+    if (speed < 20) return;
+
+    const interval = player.isSprinting ? STEPS_INTERVAL_SPRINT : STEPS_INTERVAL_WALK;
+    const timer = (this.stepTimers.get(player.id) || 0) + dt;
+    if (timer >= interval) {
+      this.stepTimers.set(player.id, 0);
+      if (!player.isBot) {
+        audio.play({ type: "step", x: player.pos.x, y: player.pos.y });
+      }
+    } else {
+      this.stepTimers.set(player.id, timer);
+    }
+  }
+
+  // ==================================================================
   // Bullets
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private fireBullet(owner: Player): void {
-    const spread = owner.weapon === "shotgun" ? 0.3 : owner.weapon === "rifle" ? 0.05 : 0.1;
-    const bulletCount = owner.weapon === "shotgun" ? 5 : 1;
-    const speed = owner.weapon === "shotgun" ? 500 : owner.weapon === "rifle" ? 600 : 450;
-    const damage = owner.weapon === "shotgun" ? 15 : owner.weapon === "rifle" ? 12 : 18;
+    const weaponDef = WEAPONS[owner.weapon];
+    const isMoving = Math.sqrt(owner.vel.x ** 2 + owner.vel.y ** 2) > 30;
+    const spread = calcSpread(weaponDef, isMoving, owner.isCrouching);
 
-    for (let i = 0; i < bulletCount; i++) {
+    for (let i = 0; i < weaponDef.pellets; i++) {
       const angle = owner.facing + (Math.random() - 0.5) * spread;
       const bullet: Bullet = {
         id: uid(),
         ownerId: owner.id,
         ownerName: owner.name,
-        pos: { x: owner.pos.x, y: owner.pos.y },
-        vel: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
-        damage,
-        isHeadshot: owner.weapon === "rifle" && Math.random() < 0.15,
-        lifetime: 1.5,
+        pos: { x: owner.pos.x + Math.cos(owner.facing) * 15, y: owner.pos.y + Math.sin(owner.facing) * 15 },
+        vel: { x: Math.cos(angle) * weaponDef.bulletSpeed, y: Math.sin(angle) * weaponDef.bulletSpeed },
+        damage: weaponDef.damage,
+        baseDamage: weaponDef.damage,
+        isHeadshot: Math.random() < (owner.weapon === "sniper" ? 0.2 : owner.weapon === "rifle" ? 0.12 : 0.08),
+        lifetime: weaponDef.range,
+        maxLifetime: weaponDef.range,
         trail: [],
+        weaponType: owner.weapon,
       };
       this.state.bullets.push(bullet);
     }
 
     owner.ammo--;
+    audio.play({ type: "shoot", weapon: owner.weapon, x: owner.pos.x, y: owner.pos.y });
+
+    // Muzzle flash particles
+    this.spawnParticles(
+      owner.pos.x + Math.cos(owner.facing) * 18,
+      owner.pos.y + Math.sin(owner.facing) * 18,
+      "#ffaa00", 3, "muzzle",
+    );
   }
 
   private updateBullets(dt: number): void {
@@ -696,9 +1012,8 @@ export class GameEngine {
       bullet.lifetime -= dt;
       if (bullet.lifetime <= 0) continue;
 
-      // Store trail
       bullet.trail.push({ x: bullet.pos.x, y: bullet.pos.y });
-      if (bullet.trail.length > 5) bullet.trail.shift();
+      if (bullet.trail.length > 6) bullet.trail.shift();
 
       bullet.pos.x += bullet.vel.x * dt;
       bullet.pos.y += bullet.vel.y * dt;
@@ -706,86 +1021,127 @@ export class GameEngine {
       // Wall collision
       let hitWall = false;
       for (const wall of s.map.walls) {
-        if (
-          bullet.pos.x >= wall.x &&
-          bullet.pos.x <= wall.x + wall.w &&
-          bullet.pos.y >= wall.y &&
-          bullet.pos.y <= wall.y + wall.h
-        ) {
+        if (bullet.pos.x >= wall.x && bullet.pos.x <= wall.x + wall.w &&
+            bullet.pos.y >= wall.y && bullet.pos.y <= wall.y + wall.h) {
           hitWall = true;
+          this.spawnParticles(bullet.pos.x, bullet.pos.y, "#888", 3, "hit");
           break;
         }
       }
       if (hitWall) continue;
 
+      // Gloo wall collision
+      let hitGloo = false;
+      for (const gw of s.glooWalls) {
+        const gx = gw.pos.x - gw.width / 2;
+        const gy = gw.pos.y - gw.height / 2;
+        if (bullet.pos.x >= gx && bullet.pos.x <= gx + gw.width &&
+            bullet.pos.y >= gy && bullet.pos.y <= gy + gw.height) {
+          gw.health -= bullet.damage;
+          hitGloo = true;
+          this.spawnParticles(bullet.pos.x, bullet.pos.y, "#00e5ff", 3, "hit");
+          break;
+        }
+      }
+      if (hitGloo) continue;
+
       // Out of bounds
-      if (
-        bullet.pos.x < 0 || bullet.pos.x > s.map.width ||
-        bullet.pos.y < 0 || bullet.pos.y > s.map.height
-      ) continue;
+      if (bullet.pos.x < 0 || bullet.pos.x > s.map.width ||
+          bullet.pos.y < 0 || bullet.pos.y > s.map.height) continue;
 
       // Hit player
       let hit = false;
       for (const [, player] of s.players) {
         if (player.id === bullet.ownerId || !player.alive) continue;
-        if (this.dist(bullet.pos, player.pos) < player.radius + 4) {
-          // Hit!
-          let dmg = bullet.damage;
-          if (bullet.isHeadshot) dmg = Math.floor(dmg * 2.5);
+        if (this.dist(bullet.pos, player.pos) < player.radius + 5) {
+          const attacker = s.players.get(bullet.ownerId);
+          const distance = this.dist(bullet.pos, attacker?.pos || bullet.pos);
+          const weaponDef = WEAPONS[bullet.weaponType];
+
+          // Calculate damage with falloff, armor, headshot
+          const isHeadshot = bullet.isHeadshot;
+          let dmg = calcDamage(weaponDef, bullet.baseDamage, distance, isHeadshot, player.armor.level);
+
+          // Helmet reduces headshot damage
+          if (isHeadshot && player.helmet.level > 0) {
+            const helmetReduction = [0, 0.15, 0.25, 0.35, 0.45][player.helmet.level];
+            dmg = Math.floor(dmg * (1 - helmetReduction));
+            // Helmet durability loss
+            player.helmet.durability -= dmg * 0.3;
+            if (player.helmet.durability <= 0) {
+              player.helmet = this.createHelmet(0);
+            }
+          }
+
+          // Armor durability loss
+          if (player.armor.level > 0 && !isHeadshot) {
+            player.armor.durability -= dmg * 0.2;
+            if (player.armor.durability <= 0) {
+              player.armor = this.createArmor(0);
+            }
+          }
+
+          // Damage EP first (EP absorbs 20% of damage)
+          if (player.ep > 0) {
+            const epAbsorb = dmg * 0.2;
+            player.ep = Math.max(0, player.ep - epAbsorb);
+            dmg = Math.floor(dmg * 0.8);
+          }
 
           player.health -= dmg;
+          player.lastDamageTime = s.matchTime;
 
-          // Track damage for assists
-          const attacker = s.players.get(bullet.ownerId);
           if (attacker) {
             attacker.damageDealt += dmg;
+            // Track for assists
+            if (!player.assists.includes(attacker.id)) {
+              player.assists.push(attacker.id);
+            }
           }
 
-          // Register assist contributor
-          if (!player.assists.includes(bullet.ownerId)) {
-            // This is actually the damage dealer, not assist
-          }
+          // Hit particles
+          this.spawnParticles(bullet.pos.x, bullet.pos.y, isHeadshot ? "#ff2b3d" : "#ff8844", isHeadshot ? 8 : 4, "hit");
+          audio.play({ type: "hit", x: bullet.pos.x, y: bullet.pos.y, isHeadshot });
 
           if (player.health <= 0) {
             player.health = 0;
             player.alive = false;
+            player.placement = s.aliveCount;
 
             // Killer stats
             if (attacker) {
               attacker.kills++;
               attacker.score += SCORE.KILL;
               attacker.killstreak++;
-              if (attacker.killstreak > attacker.killstreakMax) {
-                attacker.killstreakMax = attacker.killstreak;
-              }
-              if (bullet.isHeadshot) {
+              if (attacker.killstreak > attacker.killstreakMax) attacker.killstreakMax = attacker.killstreak;
+              if (isHeadshot) {
                 attacker.headshots++;
                 attacker.score += SCORE.HEADSHOT;
               }
 
-              // Killstreak bonus
               const streakLabel = getKillstreakLabel(attacker.killstreak);
               if (streakLabel) {
-                this.addKillFeed({
-                  killerName: attacker.name,
-                  victimName: `${streakLabel} ${player.name}`,
-                  isHeadshot: false,
-                  timestamp: s.matchTime,
-                });
+                this.addKillFeed({ killerName: attacker.name, victimName: `${streakLabel} ${player.name}`, isHeadshot: false, timestamp: s.matchTime });
+              }
+
+              audio.play({ type: "kill", x: player.pos.x, y: player.pos.y });
+            }
+
+            // Assist points
+            for (const assistId of player.assists) {
+              if (assistId !== bullet.ownerId) {
+                const assistPlayer = s.players.get(assistId);
+                if (assistPlayer) {
+                  assistPlayer.score += SCORE.ASSIST;
+                  assistPlayer.assists.push(player.id);
+                }
               }
             }
 
-            // Kill feed
-            this.addKillFeed({
-              killerName: bullet.ownerName,
-              victimName: player.name,
-              isHeadshot: bullet.isHeadshot,
-              timestamp: s.matchTime,
-            });
+            this.addKillFeed({ killerName: bullet.ownerName, victimName: player.name, isHeadshot, weaponType: bullet.weaponType, timestamp: s.matchTime });
 
-            // Placement
-            const placement = s.aliveCount;
-            player.score += this.getPlacementScore(placement);
+            // Death particles
+            this.spawnParticles(player.pos.x, player.pos.y, player.color, 15, "death");
           }
 
           hit = true;
@@ -800,9 +1156,9 @@ export class GameEngine {
     s.bullets = surviving;
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // Zone
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private updateZone(dt: number): void {
     const z = this.state.zone;
@@ -810,10 +1166,11 @@ export class GameEngine {
 
     if (z.nextShrinkTime <= 0) {
       z.phase++;
-      z.targetRadius = Math.max(80, z.radius * 0.6);
-      z.shrinkSpeed = (z.radius - z.targetRadius) / 20; // shrink over 20 seconds
-      z.damage = 2 + z.phase * 3;
-      z.nextShrinkTime = 30; // next shrink in 30 seconds
+      z.targetRadius = Math.max(60, z.radius * 0.55);
+      z.shrinkSpeed = (z.radius - z.targetRadius) / 18;
+      z.damage = 3 + z.phase * 4;
+      z.nextShrinkTime = 25;
+      audio.play({ type: "zone_warning" });
     }
 
     if (z.radius > z.targetRadius) {
@@ -826,29 +1183,56 @@ export class GameEngine {
     const z = this.state.zone;
     for (const [, player] of this.state.players) {
       if (!player.alive) continue;
-      const distFromCenter = this.dist(player.pos, {
-        x: z.centerX,
-        y: z.centerY,
-      });
+      const distFromCenter = this.dist(player.pos, { x: z.centerX, y: z.centerY });
       if (distFromCenter > z.radius) {
         player.health -= z.damage * dt;
         if (player.health <= 0) {
           player.health = 0;
           player.alive = false;
-          this.addKillFeed({
-            killerName: "ZONA",
-            victimName: player.name,
-            isHeadshot: false,
-            timestamp: this.state.matchTime,
-          });
+          player.placement = this.state.aliveCount;
+          this.addKillFeed({ killerName: "⚡ ZONA", victimName: player.name, isHeadshot: false, timestamp: this.state.matchTime });
+          this.spawnParticles(player.pos.x, player.pos.y, "#ff2b3d", 12, "death");
         }
       }
     }
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
+  // Particles
+  // ==================================================================
+
+  private spawnParticles(x: number, y: number, color: string, count: number, type: Particle["type"]): void {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 30 + Math.random() * 80;
+      this.state.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.3 + Math.random() * 0.4,
+        maxLife: 0.3 + Math.random() * 0.4,
+        color,
+        size: type === "death" ? 3 + Math.random() * 3 : 2 + Math.random() * 2,
+        type,
+      });
+    }
+  }
+
+  private updateParticles(dt: number): void {
+    this.state.particles = this.state.particles.filter(p => {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.95;
+      p.vy *= 0.95;
+      p.life -= dt;
+      return p.life > 0;
+    });
+  }
+
+  // ==================================================================
   // Rendering
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private render(): void {
     const s = this.state;
@@ -856,7 +1240,6 @@ export class GameEngine {
     const W = this.canvas.width;
     const H = this.canvas.height;
 
-    // Camera follows human
     const human = s.players.get(this.humanId);
     if (human) {
       this.camera.x = human.pos.x - W / 2;
@@ -870,45 +1253,83 @@ export class GameEngine {
     c.save();
     c.translate(-this.camera.x, -this.camera.y);
 
-    // Draw map floor
     this.renderMap(c);
-
-    // Draw zone
     this.renderZone(c);
-
-    // Draw items
     this.renderItems(c);
+    this.renderGlooWalls(c);
+    this.renderParticles(c);
 
-    // Draw players
-    for (const [, player] of s.players) {
+    // Sort players by Y for pseudo-depth
+    const sortedPlayers = Array.from(s.players.values()).filter(p => p.alive).sort((a, b) => a.pos.y - b.pos.y);
+    for (const player of sortedPlayers) {
       this.renderPlayer(c, player);
     }
 
-    // Draw bullets
     this.renderBullets(c);
 
     c.restore();
 
-    // Draw countdown
+    // Reload progress bar (on screen)
+    if (human) {
+      const rs = this.reloadState.get(human.id);
+      if (rs?.reloading) {
+        const weaponDef = WEAPONS[human.weapon];
+        const elapsed = performance.now() - rs.startTime;
+        const pct = Math.min(1, elapsed / weaponDef.reloadTime);
+        c.fillStyle = "rgba(0,0,0,0.5)";
+        c.fillRect(W / 2 - 60, H / 2 + 30, 120, 6);
+        c.fillStyle = "#ffcc00";
+        c.fillRect(W / 2 - 60, H / 2 + 30, 120 * pct, 6);
+        c.fillStyle = "#ffcc00";
+        c.font = "10px Oswald, sans-serif";
+        c.textAlign = "center";
+        c.fillText("RECARGA...", W / 2, H / 2 + 50);
+        c.textAlign = "start";
+      }
+
+      // Medkit/bandage progress
+      const ch = this.healChannel.get(human.id);
+      if (ch) {
+        const elapsed = this.state.matchTime - ch.startTime;
+        const pct = Math.min(1, elapsed / ch.duration);
+        c.fillStyle = "rgba(0,0,0,0.5)";
+        c.fillRect(W / 2 - 60, H / 2 + 30, 120, 6);
+        c.fillStyle = "#22c55e";
+        c.fillRect(W / 2 - 60, H / 2 + 30, 120 * pct, 6);
+        c.fillStyle = "#22c55e";
+        c.font = "10px Oswald, sans-serif";
+        c.textAlign = "center";
+        c.fillText(ch.type === "medkit" ? "CURANDO (KIT)..." : "CURANDO (BANDAGEM)...", W / 2, H / 2 + 50);
+        c.textAlign = "start";
+      }
+
+      // Speed boost indicator
+      if (this.speedBoosts.has(human.id)) {
+        const remaining = Math.max(0, (this.speedBoosts.get(human.id)! - performance.now()) / 1000);
+        c.fillStyle = "rgba(59,130,246,0.3)";
+        c.fillRect(W / 2 - 40, H / 2 - 30, 80, 16);
+        c.fillStyle = "#3b82f6";
+        c.font = "10px Oswald, sans-serif";
+        c.textAlign = "center";
+        c.fillText(`⚡ ${remaining.toFixed(0)}s`, W / 2, H / 2 - 18);
+        c.textAlign = "start";
+      }
+    }
+
+    // Countdown
     if (!s.started) {
       c.fillStyle = "rgba(0,0,0,0.6)";
       c.fillRect(0, 0, W, H);
       c.fillStyle = "#ff2b3d";
       c.font = "bold 72px Anton, sans-serif";
       c.textAlign = "center";
-      c.fillText(
-        Math.ceil(s.countdown).toString(),
-        W / 2,
-        H / 2 + 24,
-      );
+      c.fillText(Math.ceil(s.countdown).toString(), W / 2, H / 2 + 24);
       c.textAlign = "start";
     }
   }
 
   private renderMap(c: CanvasRenderingContext2D): void {
     const map = this.state.map;
-
-    // Floor tiles
     c.fillStyle = map.color;
     c.fillRect(0, 0, map.width, map.height);
 
@@ -917,35 +1338,24 @@ export class GameEngine {
     c.lineWidth = 1;
     const step = 40;
     for (let x = 0; x < map.width; x += step) {
-      c.beginPath();
-      c.moveTo(x, 0);
-      c.lineTo(x, map.height);
-      c.stroke();
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, map.height); c.stroke();
     }
     for (let y = 0; y < map.height; y += step) {
-      c.beginPath();
-      c.moveTo(0, y);
-      c.lineTo(map.width, y);
-      c.stroke();
+      c.beginPath(); c.moveTo(0, y); c.lineTo(map.width, y); c.stroke();
     }
 
-    // Room floors (lighter)
+    // Room floors
     for (const room of map.rooms) {
       const colors: Record<string, string> = {
-        food_court: "rgba(255,204,0,0.06)",
-        store: "rgba(255,255,255,0.04)",
-        anchor: "rgba(255,43,61,0.06)",
-        corridor: "rgba(255,255,255,0.02)",
-        atrium: "rgba(255,255,255,0.05)",
-        parking: "rgba(100,100,100,0.08)",
-        escalator: "rgba(100,200,255,0.06)",
-        restroom: "rgba(100,100,200,0.06)",
+        food_court: "rgba(255,204,0,0.06)", store: "rgba(255,255,255,0.04)",
+        anchor: "rgba(255,43,61,0.06)", corridor: "rgba(255,255,255,0.02)",
+        atrium: "rgba(255,255,255,0.05)", parking: "rgba(100,100,100,0.08)",
+        escalator: "rgba(100,200,255,0.06)", restroom: "rgba(100,100,200,0.06)",
         entrance: "rgba(200,255,200,0.06)",
       };
       c.fillStyle = colors[room.type] || "rgba(255,255,255,0.03)";
       c.fillRect(room.x, room.y, room.w, room.h);
 
-      // Room name
       if (room.type !== "corridor") {
         c.fillStyle = "rgba(255,255,255,0.15)";
         c.font = "10px Oswald, sans-serif";
@@ -960,7 +1370,6 @@ export class GameEngine {
       if (wall.type === "wall") {
         c.fillStyle = "#2a2a30";
         c.fillRect(wall.x, wall.y, wall.w, wall.h);
-        // Top highlight
         c.fillStyle = "rgba(255,255,255,0.05)";
         c.fillRect(wall.x, wall.y, wall.w, 2);
       } else if (wall.type === "cover") {
@@ -977,22 +1386,21 @@ export class GameEngine {
     const z = this.state.zone;
     const map = this.state.map;
 
-    // Draw danger zone (outside circle) as red tint
     c.save();
-    c.fillStyle = "rgba(255,43,61,0.15)";
+    c.fillStyle = "rgba(255,43,61,0.12)";
     c.fillRect(0, 0, map.width, map.height);
-
-    // Clear the safe zone
     c.globalCompositeOperation = "destination-out";
     c.beginPath();
     c.arc(z.centerX, z.centerY, z.radius, 0, Math.PI * 2);
     c.fill();
     c.globalCompositeOperation = "source-over";
 
-    // Zone border
+    // Animated zone border
     c.strokeStyle = "#ff2b3d";
     c.lineWidth = 3;
+    const dashOffset = performance.now() / 50;
     c.setLineDash([10, 5]);
+    c.lineDashOffset = dashOffset;
     c.beginPath();
     c.arc(z.centerX, z.centerY, z.radius, 0, Math.PI * 2);
     c.stroke();
@@ -1001,102 +1409,186 @@ export class GameEngine {
   }
 
   private renderItems(c: CanvasRenderingContext2D): void {
+    const time = performance.now();
     for (const item of this.state.items) {
       if (item.collected) continue;
 
-      const colors: Record<string, string> = {
-        health: "#22c55e",
-        ammo: "#f59e0b",
-        speed: "#3b82f6",
-        shield: "#a855f7",
-      };
-      const icons: Record<string, string> = {
-        health: "+",
-        ammo: "•",
-        speed: "»",
-        shield: "◇",
-      };
+      const color = this.getItemColor(item.type);
+      const icon = this.getItemIcon(item.type);
 
-      c.fillStyle = colors[item.type] || "#fff";
-      c.globalAlpha = 0.5 + Math.sin(performance.now() / 300) * 0.2;
+      // Glow
+      c.globalAlpha = 0.4 + Math.sin(time / 300 + item.pos.x) * 0.15;
+      c.fillStyle = color;
       c.beginPath();
-      c.arc(item.pos.x, item.pos.y, 8, 0, Math.PI * 2);
+      c.arc(item.pos.x, item.pos.y, 10, 0, Math.PI * 2);
       c.fill();
       c.globalAlpha = 1;
 
+      // Icon
       c.fillStyle = "#fff";
       c.font = "bold 10px Inter, sans-serif";
       c.textAlign = "center";
-      c.fillText(icons[item.type] || "?", item.pos.x, item.pos.y + 4);
+      c.fillText(icon, item.pos.x, item.pos.y + 4);
       c.textAlign = "start";
     }
   }
 
+  private renderGlooWalls(c: CanvasRenderingContext2D): void {
+    for (const gw of this.state.glooWalls) {
+      c.save();
+      c.translate(gw.pos.x, gw.pos.y);
+      c.rotate(gw.rotation);
+
+      // Ice wall body
+      const pct = gw.health / gw.maxHealth;
+      const alpha = 0.3 + pct * 0.5;
+      c.fillStyle = `rgba(0,229,255,${alpha})`;
+      c.fillRect(-gw.width / 2, -gw.height / 2, gw.width, gw.height);
+
+      // Border
+      c.strokeStyle = `rgba(0,229,255,${0.5 + pct * 0.5})`;
+      c.lineWidth = 2;
+      c.strokeRect(-gw.width / 2, -gw.height / 2, gw.width, gw.height);
+
+      // Frost effect
+      c.fillStyle = "rgba(255,255,255,0.15)";
+      c.fillRect(-gw.width / 2 + 4, -2, gw.width - 8, 4);
+
+      c.restore();
+    }
+  }
+
+  private renderParticles(c: CanvasRenderingContext2D): void {
+    for (const p of this.state.particles) {
+      const alpha = p.life / p.maxLife;
+      c.globalAlpha = alpha;
+      c.fillStyle = p.color;
+      c.beginPath();
+      c.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+
   private renderPlayer(c: CanvasRenderingContext2D, player: Player): void {
     if (!player.alive) return;
-
     const isHuman = player.id === this.humanId;
+
+    c.save();
+    c.translate(player.pos.x, player.pos.y);
 
     // Shadow
     c.fillStyle = "rgba(0,0,0,0.3)";
     c.beginPath();
-    c.ellipse(player.pos.x, player.pos.y + player.radius + 2, player.radius, 5, 0, 0, Math.PI * 2);
+    c.ellipse(0, player.radius + 3, player.radius * 0.9, 5, 0, 0, Math.PI * 2);
     c.fill();
 
-    // Body
+    // Body — directional top-down rendering
+    const bodyLen = player.isCrouching ? 18 : 24;
+    const bodyWid = player.isCrouching ? 16 : 14;
+
+    c.rotate(player.facing);
+
+    // Torso (oval)
     c.fillStyle = player.color;
     c.beginPath();
-    c.arc(player.pos.x, player.pos.y, player.radius, 0, Math.PI * 2);
+    c.ellipse(0, 0, bodyLen / 2, bodyWid / 2, 0, 0, Math.PI * 2);
     c.fill();
 
-    // Direction indicator
-    c.fillStyle = "rgba(0,0,0,0.4)";
+    // Darker inner area
+    c.fillStyle = "rgba(0,0,0,0.15)";
     c.beginPath();
-    c.arc(
-      player.pos.x + Math.cos(player.facing) * 8,
-      player.pos.y + Math.sin(player.facing) * 8,
-      5,
-      0,
-      Math.PI * 2,
-    );
+    c.ellipse(2, 0, bodyLen / 4, bodyWid / 3, 0, 0, Math.PI * 2);
     c.fill();
+
+    // Head (circle at front)
+    c.fillStyle = this.skinColor(player.color);
+    c.beginPath();
+    c.arc(bodyLen / 2 - 3, 0, 5, 0, Math.PI * 2);
+    c.fill();
+
+    // Weapon barrel
+    c.fillStyle = "#555";
+    c.fillRect(bodyLen / 2 - 2, -2, 12, 4);
+    c.fillStyle = "#333";
+    c.fillRect(bodyLen / 2 + 6, -1.5, 6, 3);
+
+    // Armor visual indicator
+    if (player.armor.level > 0) {
+      c.strokeStyle = "#666";
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.ellipse(0, 0, bodyLen / 2 + 2, bodyWid / 2 + 2, 0, 0, Math.PI * 2);
+      c.stroke();
+    }
+
+    // Helmet visual indicator
+    if (player.helmet.level > 0) {
+      c.fillStyle = `rgba(150,150,150,0.4)`;
+      c.beginPath();
+      c.arc(bodyLen / 2 - 3, 0, 6, 0, Math.PI * 2);
+      c.fill();
+    }
+
+    c.rotate(-player.facing);
+
+    // Crouch indicator
+    if (player.isCrouching) {
+      c.strokeStyle = "rgba(255,255,255,0.3)";
+      c.lineWidth = 1;
+      c.setLineDash([3, 3]);
+      c.beginPath();
+      c.arc(0, 0, player.radius + 2, 0, Math.PI * 2);
+      c.stroke();
+      c.setLineDash([]);
+    }
+
+    c.restore();
 
     // Health bar
-    const barW = 30;
-    const barH = 4;
+    const barW = 28;
+    const barH = 3;
     const barX = player.pos.x - barW / 2;
-    const barY = player.pos.y - player.radius - 10;
+    const barY = player.pos.y - player.radius - 14;
 
-    c.fillStyle = "rgba(0,0,0,0.5)";
-    c.fillRect(barX, barY, barW, barH);
+    c.fillStyle = "rgba(0,0,0,0.6)";
+    c.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
 
     const healthPct = player.health / player.maxHealth;
     c.fillStyle = healthPct > 0.5 ? "#22c55e" : healthPct > 0.25 ? "#f59e0b" : "#ff2b3d";
     c.fillRect(barX, barY, barW * healthPct, barH);
 
+    // Armor bar (small, above health)
+    if (player.armor.level > 0) {
+      const armorPct = player.armor.durability / player.armor.maxDurability;
+      c.fillStyle = "rgba(0,0,0,0.4)";
+      c.fillRect(barX, barY - 4, barW, 2);
+      c.fillStyle = "#94a3b8";
+      c.fillRect(barX, barY - 4, barW * armorPct, 2);
+    }
+
     // Name
     c.fillStyle = isHuman ? "#ffcc00" : "rgba(255,255,255,0.7)";
     c.font = `${isHuman ? "bold " : ""}10px Inter, sans-serif`;
     c.textAlign = "center";
-    c.fillText(player.name, player.pos.x, barY - 4);
+    c.fillText(player.name, player.pos.x, barY - 6);
     c.textAlign = "start";
 
-    // Human indicator
+    // Human indicator ring
     if (isHuman) {
-      c.strokeStyle = "#ffcc00";
-      c.lineWidth = 2;
+      c.strokeStyle = "rgba(255,204,0,0.5)";
+      c.lineWidth = 1.5;
       c.beginPath();
-      c.arc(player.pos.x, player.pos.y, player.radius + 4, 0, Math.PI * 2);
+      c.arc(player.pos.x, player.pos.y, player.radius + 5, 0, Math.PI * 2);
       c.stroke();
     }
   }
 
   private renderBullets(c: CanvasRenderingContext2D): void {
     for (const bullet of this.state.bullets) {
-      // Trail
       if (bullet.trail.length > 1) {
-        c.strokeStyle = "rgba(255,200,50,0.3)";
-        c.lineWidth = 2;
+        c.strokeStyle = bullet.weaponType === "sniper" ? "rgba(255,50,50,0.4)" : "rgba(255,200,50,0.3)";
+        c.lineWidth = bullet.weaponType === "shotgun" ? 1.5 : 2;
         c.beginPath();
         c.moveTo(bullet.trail[0].x, bullet.trail[0].y);
         for (let i = 1; i < bullet.trail.length; i++) {
@@ -1106,42 +1598,59 @@ export class GameEngine {
         c.stroke();
       }
 
-      // Bullet
-      c.fillStyle = bullet.isHeadshot ? "#ff2b3d" : "#ffcc00";
+      c.fillStyle = bullet.isHeadshot ? "#ff2b3d" : bullet.weaponType === "sniper" ? "#ff4444" : "#ffcc00";
       c.beginPath();
-      c.arc(bullet.pos.x, bullet.pos.y, 3, 0, Math.PI * 2);
+      c.arc(bullet.pos.x, bullet.pos.y, bullet.weaponType === "shotgun" ? 2 : 3, 0, Math.PI * 2);
       c.fill();
     }
   }
 
-  // ------------------------------------------------------------------
+  // ==================================================================
   // Helpers
-  // ------------------------------------------------------------------
+  // ==================================================================
 
   private dist(a: Vec2, b: Vec2): number {
     return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
   }
 
-  private rectsOverlap(
-    a: { x: number; y: number; w: number; h: number },
-    b: { x: number; y: number; w: number; h: number },
-  ): boolean {
+  private rectsOverlap(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
   private addKillFeed(entry: KillFeedEntry): void {
     this.state.killFeed.unshift(entry);
-    if (this.state.killFeed.length > 8) {
-      this.state.killFeed.pop();
-    }
+    if (this.state.killFeed.length > 8) this.state.killFeed.pop();
   }
 
-  private getPlacementScore(placement: number): number {
-    if (placement === 1) return SCORE.PLACEMENT_WIN;
-    if (placement === 2) return SCORE.PLACEMENT_TOP2;
-    if (placement === 3) return SCORE.PLACEMENT_TOP3;
-    if (placement <= 5) return SCORE.PLACEMENT_TOP5;
-    if (placement <= 10) return SCORE.PLACEMENT_TOP10;
-    return 0;
+  private skinColor(playerColor: string): string {
+    // Generate a skin tone from player color
+    const r = parseInt(playerColor.slice(1, 3), 16);
+    const g = parseInt(playerColor.slice(3, 5), 16);
+    const b = parseInt(playerColor.slice(5, 7), 16);
+    const avg = (r + g + b) / 3;
+    if (avg > 150) return `rgb(${Math.floor(r * 0.7)},${Math.floor(g * 0.6)},${Math.floor(b * 0.5)})`;
+    return `rgb(${Math.min(255, r + 80)},${Math.min(255, g + 60)},${Math.min(255, b + 40)})`;
+  }
+
+  private getItemColor(type: ItemType): string {
+    const colors: Record<string, string> = {
+      health: "#22c55e", medkit: "#16a34a", bandage: "#4ade80",
+      ep_boost: "#a855f7", ammo: "#f59e0b", gloo_wall: "#00e5ff",
+      vest_1: "#64748b", vest_2: "#94a3b8", vest_3: "#cbd5e1", vest_4: "#f8fafc",
+      helmet_1: "#64748b", helmet_2: "#94a3b8", helmet_3: "#cbd5e1", helmet_4: "#f8fafc",
+      speed_boost: "#3b82f6",
+    };
+    return colors[type] || "#fff";
+  }
+
+  private getItemIcon(type: ItemType): string {
+    const icons: Record<string, string> = {
+      health: "+", medkit: "M", bandage: "B",
+      ep_boost: "E", ammo: "•", gloo_wall: "G",
+      vest_1: "V1", vest_2: "V2", vest_3: "V3", vest_4: "V4",
+      helmet_1: "H1", helmet_2: "H2", helmet_3: "H3", helmet_4: "H4",
+      speed_boost: "»",
+    };
+    return icons[type] || "?";
   }
 }
