@@ -27,6 +27,20 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [selectedMap, setSelectedMap] = useState<string>(ALL_MAPS[0].id);
   const [botCount, setBotCount] = useState(14);
+  const [playerColor, setPlayerColor] = useState("#ff2b3d");
+
+  const AVATAR_COLORS = [
+    { label: "Vermelho", value: "#ff2b3d" },
+    { label: "Azul", value: "#3b82f6" },
+    { label: "Verde", value: "#22c55e" },
+    { label: "Amarelo", value: "#f59e0b" },
+    { label: "Roxo", value: "#a855f7" },
+    { label: "Rosa", value: "#ec4899" },
+    { label: "Ciano", value: "#06b6d4" },
+    { label: "Laranja", value: "#f97316" },
+    { label: "Violeta", value: "#8b5cf6" },
+    { label: "Turquesa", value: "#14b8a6" },
+  ];
 
   const handleSignOut = async () => {
     await signOut();
@@ -34,7 +48,7 @@ export default function Dashboard() {
   };
 
   const startGame = (mapId: string) => {
-    navigate(`/game?map=${mapId}&bots=${botCount}`);
+    navigate(`/game?map=${mapId}&bots=${botCount}&color=${encodeURIComponent(playerColor)}`);
   };
 
   const roomColors: Record<string, string> = {
@@ -128,6 +142,28 @@ export default function Dashboard() {
                 {opt.label}
               </button>
             ))}
+          </div>
+
+          {/* Avatar color picker */}
+          <div className="mb-6">
+            <span className="font-oswald text-xs tracking-[0.14em] text-[#7c7c82] uppercase block mb-2">
+              Cor do Avatar:
+            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {AVATAR_COLORS.map((color) => (
+                <button
+                  key={color.value}
+                  onClick={() => setPlayerColor(color.value)}
+                  title={color.label}
+                  className={`w-9 h-9 rounded-full cursor-pointer transition-all border-2 ${
+                    playerColor === color.value
+                      ? "border-white scale-110 shadow-[0_0_12px_rgba(255,255,255,0.3)]"
+                      : "border-transparent hover:scale-105"
+                  }`}
+                  style={{ backgroundColor: color.value }}
+                />
+              ))}
+            </div>
           </div>
 
           {/* Map grid */}

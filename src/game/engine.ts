@@ -19,6 +19,8 @@ import {
   Particle,
   MovementState,
   ItemType,
+  FloatingText,
+  Hitmarker,
 } from "./types";
 import { WEAPONS, calcDamage, calcSpread } from "./weapons";
 import { SCORE, getKillstreakLabel } from "./scoring";
@@ -119,9 +121,9 @@ export class GameEngine {
   // Public API
   // ==================================================================
 
-  start(config: GameConfig, playerName: string): GameState {
+  start(config: GameConfig, playerName: string, playerColor?: string): GameState {
     this.config = config;
-    this.state = this.createInitialState(config, playerName);
+    this.state = this.createInitialState(config, playerName, playerColor);
     this.humanId = this.state.players.entries().next().value![0];
     this.running = true;
     this.lastTime = performance.now();
@@ -154,7 +156,7 @@ export class GameEngine {
   // State creation
   // ==================================================================
 
-  private createInitialState(config: GameConfig, playerName: string): GameState {
+  private createInitialState(config: GameConfig, playerName: string, playerColor?: string): GameState {
     const players = new Map<string, Player>();
     const map = config.map;
     const allSpawns = [...map.spawns].sort(() => Math.random() - 0.5);
@@ -166,7 +168,7 @@ export class GameEngine {
       name: playerName,
       isBot: false,
       spawn: humanSpawn,
-      color: PLAYER_COLORS[0],
+      color: playerColor || PLAYER_COLORS[0],
       weapon: "rifle",
     });
     players.set(human.id, human);
@@ -231,6 +233,8 @@ export class GameEngine {
       started: false,
       countdown: 3,
       particles: [],
+      floatingTexts: [],
+      hitmarkers: [],
       screenShake: 0,
     };
   }
@@ -573,6 +577,12 @@ export class GameEngine {
 
     // Particles
     this.updateParticles(dt);
+
+    // Floating texts
+    this.updateFloatingTexts(dt);
+
+    // Hitmarkers
+    this.updateHitmarkers(dt);
 
     // Alive count & game over
     let alive = 0;
@@ -1164,6 +1174,30 @@ export class GameEngine {
           this.spawnParticles(bullet.pos.x, bullet.pos.y, isHeadshot ? "#ff2b3d" : "#ff8844", isHeadshot ? 8 : 4, "hit");
           audio.play({ type: "hit", x: bullet.pos.x, y: bullet.pos.y, isHeadshot });
 
+          // Floating damage number
+          const dmgText = isHeadshot ? `-${dmg}!` : `-${dmg}`;
+          s.floatingTexts.push({
+            x: bullet.pos.x + (Math.random() - 0.5) * 10,
+            y: bullet.pos.y - 10,
+            text: dmgText,
+            color: isHeadshot ? "#ff2b3d" : "#ffcc00",
+            life: 1.0,
+            maxLife: 1.0,
+            vy: -60,
+            fontSize: isHeadshot ? 16 : 13,
+          });
+
+          // Hitmarker (only for human player's hits)
+          if (bullet.ownerId === this.humanId) {
+            s.hitmarkers.push({
+              x: bullet.pos.x,
+              y: bullet.pos.y,
+              life: 0.2,
+              isHeadshot,
+              size: isHeadshot ? 10 : 7,
+            });
+          }
+
           if (player.health <= 0) {
             player.health = 0;
             player.alive = false;
@@ -1302,6 +1336,21 @@ export class GameEngine {
     });
   }
 
+  private updateFloatingTexts(dt: number): void {
+    this.state.floatingTexts = this.state.floatingTexts.filter(ft => {
+      ft.y += ft.vy * dt;
+      ft.life -= dt;
+      return ft.life > 0;
+    });
+  }
+
+  private updateHitmarkers(dt: number): void {
+    this.state.hitmarkers = this.state.hitmarkers.filter(hm => {
+      hm.life -= dt;
+      return hm.life > 0;
+    });
+  }
+
   // ==================================================================
   // Rendering
   // ==================================================================
@@ -1340,6 +1389,8 @@ export class GameEngine {
     this.renderItems(c);
     this.renderGlooWalls(c);
     this.renderParticles(c);
+    this.renderFloatingTexts(c);
+    this.renderHitmarkers(c);
 
     // Sort players by Y for pseudo-depth
     const sortedPlayers = Array.from(s.players.values()).filter(p => p.alive).sort((a, b) => a.pos.y - b.pos.y);
@@ -1548,21 +1599,21 @@ export class GameEngine {
       const w = gw.width;
       const h = 10;
 
-      // Outer glow
-      c.shadowColor = "rgba(0,229,255,0.4)";
-      c.shadowBlur = 8 + Math.sin(time / 200) * 3;
+      // Outer glow — stronger when healthier
+      c.shadowColor = `rgba(0,229,255,${0.2 + pct * 0.4})`;
+      c.shadowBlur = 6 + Math.sin(time / 200) * 3 * pct;
 
-      // Ice body
+      // Ice body with gradient
       const grad = c.createLinearGradient(-w / 2, 0, w / 2, 0);
-      grad.addColorStop(0, `rgba(0,180,230,${0.4 + pct * 0.3})`);
-      grad.addColorStop(0.5, `rgba(0,229,255,${0.5 + pct * 0.4})`);
-      grad.addColorStop(1, `rgba(0,180,230,${0.4 + pct * 0.3})`);
+      grad.addColorStop(0, `rgba(0,180,230,${0.3 + pct * 0.4})`);
+      grad.addColorStop(0.5, `rgba(0,229,255,${0.4 + pct * 0.5})`);
+      grad.addColorStop(1, `rgba(0,180,230,${0.3 + pct * 0.4})`);
       c.fillStyle = grad;
       this.roundRect(c, -w / 2, -h / 2, w, h, 3);
       c.fill();
 
       // Border
-      c.strokeStyle = `rgba(0,255,255,${0.6 + pct * 0.4})`;
+      c.strokeStyle = `rgba(0,255,255,${0.4 + pct * 0.6})`;
       c.lineWidth = 1.5;
       this.roundRect(c, -w / 2, -h / 2, w, h, 3);
       c.stroke();
@@ -1571,18 +1622,49 @@ export class GameEngine {
       c.shadowBlur = 0;
       c.strokeStyle = "rgba(255,255,255,0.2)";
       c.lineWidth = 0.8;
-      const segments = 4;
+      const segments = 5;
       for (let i = 0; i < segments; i++) {
         const sx = -w / 2 + (w / segments) * i + w / segments / 2;
         c.beginPath();
         c.moveTo(sx, -h / 2 + 1);
-        c.lineTo(sx + (Math.random() - 0.5) * 8, h / 2 - 1);
+        c.lineTo(sx + (Math.random() - 0.5) * 6, h / 2 - 1);
         c.stroke();
       }
 
       // Top highlight
       c.fillStyle = "rgba(255,255,255,0.12)";
       c.fillRect(-w / 2 + 3, -h / 2 + 1, w - 6, 2);
+
+      // DURABILITY CRACKS — show when wall takes damage
+      if (pct < 0.8) {
+        c.strokeStyle = `rgba(255,255,255,${(0.8 - pct) * 0.6})`;
+        c.lineWidth = 1;
+        const crackCount = Math.floor((1 - pct) * 8);
+        for (let i = 0; i < crackCount; i++) {
+          const cx = -w / 2 + Math.sin(i * 7.3 + gw.pos.x) * w * 0.4 + w / 2;
+          const cy = -h / 2 + Math.cos(i * 5.1 + gw.pos.y) * h * 0.3 + h / 2;
+          c.beginPath();
+          c.moveTo(cx, cy);
+          c.lineTo(cx + Math.sin(i * 3.7) * 8, cy + Math.cos(i * 2.9) * 4);
+          c.stroke();
+        }
+      }
+
+      // DESTROYED FLASH — when very low, show red warning
+      if (pct < 0.25) {
+        c.fillStyle = `rgba(255,43,61,${0.15 + Math.sin(time / 100) * 0.1})`;
+        this.roundRect(c, -w / 2, -h / 2, w, h, 3);
+        c.fill();
+      }
+
+      // Durability bar below the wall
+      if (pct < 1) {
+        c.fillStyle = "rgba(0,0,0,0.5)";
+        c.fillRect(-w / 2, h / 2 + 2, w, 2);
+        const barColor = pct > 0.5 ? "#00e5ff" : pct > 0.25 ? "#f59e0b" : "#ff2b3d";
+        c.fillStyle = barColor;
+        c.fillRect(-w / 2, h / 2 + 2, w * pct, 2);
+      }
 
       c.restore();
     }
@@ -1596,6 +1678,50 @@ export class GameEngine {
       c.beginPath();
       c.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
       c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+
+  private renderFloatingTexts(c: CanvasRenderingContext2D): void {
+    for (const ft of this.state.floatingTexts) {
+      const alpha = Math.min(1, ft.life / ft.maxLife * 2);
+      const scale = 1 + (1 - ft.life / ft.maxLife) * 0.3;
+      c.globalAlpha = alpha;
+      c.fillStyle = ft.color;
+      c.font = `bold ${Math.round(ft.fontSize * scale)}px Anton, sans-serif`;
+      c.textAlign = "center";
+      c.strokeStyle = "rgba(0,0,0,0.7)";
+      c.lineWidth = 3;
+      c.strokeText(ft.text, ft.x, ft.y);
+      c.fillText(ft.text, ft.x, ft.y);
+      c.textAlign = "start";
+    }
+    c.globalAlpha = 1;
+  }
+
+  private renderHitmarkers(c: CanvasRenderingContext2D): void {
+    const human = this.state.players.get(this.humanId);
+    if (!human || !human.alive) return;
+
+    for (const hm of this.state.hitmarkers) {
+      const alpha = hm.life / 0.2;
+      const size = hm.size * (1 + (1 - alpha) * 0.5);
+      c.globalAlpha = alpha * 0.9;
+      c.strokeStyle = hm.isHeadshot ? "#ff2b3d" : "#ffffff";
+      c.lineWidth = 2;
+
+      // X shape hitmarker
+      const dx = size * 0.4;
+      c.beginPath();
+      c.moveTo(hm.x - dx, hm.y - dx);
+      c.lineTo(hm.x - dx * 0.3, hm.y - dx * 0.3);
+      c.moveTo(hm.x + dx, hm.y - dx);
+      c.lineTo(hm.x + dx * 0.3, hm.y - dx * 0.3);
+      c.moveTo(hm.x - dx, hm.y + dx);
+      c.lineTo(hm.x - dx * 0.3, hm.y + dx * 0.3);
+      c.moveTo(hm.x + dx, hm.y + dx);
+      c.lineTo(hm.x + dx * 0.3, hm.y + dx * 0.3);
+      c.stroke();
     }
     c.globalAlpha = 1;
   }

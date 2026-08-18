@@ -125,44 +125,78 @@ class AudioSystem {
     gain.connect(this.masterGain);
     noise.start(now);
     noise.stop(now + 0.3);
-  }
-
-  private playHit(vol: number, isHeadshot: boolean): void {
+  }  private playHit(vol: number, isHeadshot: boolean): void {
     if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    if (isHeadshot) {
+      // Headshot - sharp metallic ding with two-tone
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const gain2 = this.ctx.createGain();
 
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(isHeadshot ? 900 : 500, now);
-    osc.frequency.exponentialRampToValueAtTime(isHeadshot ? 200 : 150, now + 0.1);
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(1200, now);
+      osc1.frequency.exponentialRampToValueAtTime(800, now + 0.15);
+      gain.gain.setValueAtTime(vol * 0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
 
-    gain.gain.setValueAtTime(vol * 0.3, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc2.type = "triangle";
+      osc2.frequency.setValueAtTime(1800, now);
+      gain2.gain.setValueAtTime(vol * 0.15, now);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
 
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-    osc.start(now);
-    osc.stop(now + 0.15);
+      osc1.connect(gain); gain.connect(this.masterGain);
+      osc2.connect(gain2); gain2.connect(this.masterGain);
+      osc1.start(now); osc1.stop(now + 0.25);
+      osc2.start(now); osc2.stop(now + 0.15);
+    } else {
+      // Body hit - dull thud
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(400, now);
+      osc.frequency.exponentialRampToValueAtTime(120, now + 0.08);
+      gain.gain.setValueAtTime(vol * 0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.12);
+    }
   }
 
   private playKill(vol: number): void {
     if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
 
-    // Descending tone
+    // Kill confirmation - satisfying descending sweep + click
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    osc.type = "square";
-    osc.frequency.setValueAtTime(600, now);
-    osc.frequency.exponentialRampToValueAtTime(100, now + 0.25);
-    gain.gain.setValueAtTime(vol * 0.2, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.2);
+    gain.gain.setValueAtTime(vol * 0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
     osc.connect(gain);
     gain.connect(this.masterGain);
     osc.start(now);
-    osc.stop(now + 0.35);
+    osc.stop(now + 0.3);
+
+    // Click accent
+    const click = this.createNoise(0.015);
+    const clickGain = this.ctx.createGain();
+    const clickFilter = this.ctx.createBiquadFilter();
+    clickFilter.type = "highpass";
+    clickFilter.frequency.value = 4000;
+    clickGain.gain.setValueAtTime(vol * 0.15, now + 0.05);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    click.connect(clickFilter);
+    clickFilter.connect(clickGain);
+    clickGain.connect(this.masterGain);
+    click.start(now + 0.05);
+    click.stop(now + 0.12);
   }
 
   private playStep(vol: number): void {
@@ -206,22 +240,37 @@ class AudioSystem {
     if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
 
-    // Mechanical click
-    const noise = this.createNoise(0.03);
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = "bandpass";
-    filter.frequency.value = 2000;
-    filter.Q.value = 2;
+    // Two-click reload: mag out + mag in
+    const click1 = this.createNoise(0.02);
+    const g1 = this.ctx.createGain();
+    const f1 = this.ctx.createBiquadFilter();
+    f1.type = "bandpass"; f1.frequency.value = 1800; f1.Q.value = 2;
+    g1.gain.setValueAtTime(vol * 0.35, now);
+    g1.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    click1.connect(f1); f1.connect(g1); g1.connect(this.masterGain);
+    click1.start(now); click1.stop(now + 0.05);
 
-    gain.gain.setValueAtTime(vol * 0.3, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+    // Slide sound
+    const slide = this.ctx.createOscillator();
+    const slideG = this.ctx.createGain();
+    slide.type = "sawtooth";
+    slide.frequency.setValueAtTime(300, now + 0.08);
+    slide.frequency.linearRampToValueAtTime(500, now + 0.15);
+    slideG.gain.setValueAtTime(0, now);
+    slideG.gain.linearRampToValueAtTime(vol * 0.08, now + 0.08);
+    slideG.gain.linearRampToValueAtTime(0, now + 0.18);
+    slide.connect(slideG); slideG.connect(this.masterGain);
+    slide.start(now); slide.stop(now + 0.2);
 
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.masterGain);
-    noise.start(now);
-    noise.stop(now + 0.08);
+    // Second click
+    const click2 = this.createNoise(0.025);
+    const g2 = this.ctx.createGain();
+    const f2 = this.ctx.createBiquadFilter();
+    f2.type = "bandpass"; f2.frequency.value = 2500; f2.Q.value = 3;
+    g2.gain.setValueAtTime(vol * 0.4, now + 0.12);
+    g2.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    click2.connect(f2); f2.connect(g2); g2.connect(this.masterGain);
+    click2.start(now + 0.12); click2.stop(now + 0.18);
   }
 
   private playGlooPlace(vol: number): void {

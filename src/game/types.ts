@@ -287,6 +287,12 @@ export interface GameState {
   // Particles (visual feedback)
   particles: Particle[];
 
+  // Floating damage numbers
+  floatingTexts: FloatingText[];
+
+  // Hitmarkers
+  hitmarkers: Hitmarker[];
+
   // Screen shake
   screenShake: number; // remaining shake intensity
 }
@@ -305,6 +311,29 @@ export interface Particle {
   color: string;
   size: number;
   type: "hit" | "muzzle" | "death" | "heal" | "spark";
+}
+
+// ============================================================================
+// Floating damage numbers & hitmarkers
+// ============================================================================
+
+export interface FloatingText {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  life: number;
+  maxLife: number;
+  vy: number;
+  fontSize: number;
+}
+
+export interface Hitmarker {
+  x: number;
+  y: number;
+  life: number;
+  isHeadshot: boolean;
+  size: number;
 }
 
 // ============================================================================

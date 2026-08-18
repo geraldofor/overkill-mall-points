@@ -44,6 +44,7 @@ export default function Game() {
 
   const mapId = searchParams.get("map") || "norte_plaza";
   const botCount = parseInt(searchParams.get("bots") || "14", 10);
+  const playerColor = searchParams.get("color") || "#ff2b3d";
   const playerName = user?.name || "Jogador";
 
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -138,6 +139,7 @@ export default function Game() {
         map,
       },
       playerName,
+      playerColor,
     );
 
     return () => engine.stop();
