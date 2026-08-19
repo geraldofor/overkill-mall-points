@@ -80,6 +80,7 @@ export class GameEngine {
   private keys: Set<string> = new Set();
   private mouse = { x: 0, y: 0, down: false };
   private camera = { x: 0, y: 0 };
+  private zoom = 1; // Camera zoom factor
   private animFrame = 0;
   private lastTime = 0;
   private running = false;
@@ -125,6 +126,10 @@ export class GameEngine {
     this.config = config;
     this.state = this.createInitialState(config, playerName, playerColor);
     this.humanId = this.state.players.entries().next().value![0];
+    // Set zoom based on screen size — mobile gets zoomed in more
+    const isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    const minDim = Math.min(window.innerWidth, window.innerHeight);
+    this.zoom = isMobile ? (minDim < 400 ? 1.6 : 1.3) : 1;
     this.running = true;
     this.lastTime = performance.now();
     this.loop();
@@ -385,8 +390,8 @@ export class GameEngine {
       const rect = this.canvas.getBoundingClientRect();
       const scaleX = this.canvas.width / rect.width;
       const scaleY = this.canvas.height / rect.height;
-      this.mouse.x = (e.clientX - rect.left) * scaleX + this.camera.x;
-      this.mouse.y = (e.clientY - rect.top) * scaleY + this.camera.y;
+      this.mouse.x = ((e.clientX - rect.left) * scaleX) / this.zoom + this.camera.x;
+      this.mouse.y = ((e.clientY - rect.top) * scaleY) / this.zoom + this.camera.y;
     });
 
     this.canvas.addEventListener("mousedown", (e) => {
@@ -675,8 +680,8 @@ export class GameEngine {
       const rect = this.canvas.getBoundingClientRect();
       const scaleX = this.canvas.width / rect.width;
       const scaleY = this.canvas.height / rect.height;
-      targetX = (this.touchShoot.x - rect.left) * scaleX + this.camera.x;
-      targetY = (this.touchShoot.y - rect.top) * scaleY + this.camera.y;
+      targetX = ((this.touchShoot.x - rect.left) * scaleX) / this.zoom + this.camera.x;
+      targetY = ((this.touchShoot.y - rect.top) * scaleY) / this.zoom + this.camera.y;
     } else {
       targetX = this.mouse.x;
       targetY = this.mouse.y;
@@ -1361,10 +1366,14 @@ export class GameEngine {
     const W = this.canvas.width;
     const H = this.canvas.height;
 
+    // Calculate view size based on zoom (higher zoom = smaller view = zoomed in)
+    const viewW = W / this.zoom;
+    const viewH = H / this.zoom;
+
     const human = s.players.get(this.humanId);
     if (human) {
-      this.camera.x = human.pos.x - W / 2;
-      this.camera.y = human.pos.y - H / 2;
+      this.camera.x = human.pos.x - viewW / 2;
+      this.camera.y = human.pos.y - viewH / 2;
     }
 
     // Screen shake decay
@@ -1382,6 +1391,7 @@ export class GameEngine {
     c.fillRect(0, 0, W, H);
 
     c.save();
+    c.scale(this.zoom, this.zoom);
     c.translate(-this.camera.x + shakeX, -this.camera.y + shakeY);
 
     this.renderMap(c);

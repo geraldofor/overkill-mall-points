@@ -61,7 +61,9 @@ export default function Game() {
   const resizeCanvas = useCallback(() => {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    setCanvasSize({ w, h });
+    // Use devicePixelRatio for crisp rendering on high-DPI screens
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    setCanvasSize({ w: Math.floor(w * dpr), h: Math.floor(h * dpr) });
     setIsPortrait(h > w);
   }, []);
 
@@ -210,7 +212,7 @@ export default function Game() {
         ref={canvasRef}
         width={canvasSize.w}
         height={canvasSize.h}
-        className="block"
+        className="block w-screen h-screen"
         style={{ touchAction: "none" }}
       />
 
